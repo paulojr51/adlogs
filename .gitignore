@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+build/
+
+# Prisma generated client
+packages/shared/client/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python
+collector/venv/
+collector/__pycache__/
+collector/*.pyc
+**/__pycache__/
+*.pyc
+
+# Logs
+*.log
+logs/
+
+# SSL certs
+nginx/ssl/*.crt
+nginx/ssl/*.key
+nginx/ssl/*.pem
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

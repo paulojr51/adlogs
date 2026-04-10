@@ -1,0 +1,39 @@
+{
+  "name": "adlogs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:integration": "pnpm --filter @adlogs/api test:integration && pnpm --filter @adlogs/web test:integration",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^15.15.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.4.2",
+    "turbo": "latest",
+    "typescript-eslint": "^8.58.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "pnpm": {
+    "overrides": {
+      "flatted": ">=3.4.2",
+      "lodash": "4.18.1",
+      "path-to-regexp": "8.4.0"
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  }
+}

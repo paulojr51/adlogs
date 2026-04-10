@@ -1,0 +1,158 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum FileAction {
+  READ
+  WRITE
+  DELETE
+  RENAME
+  PERMISSION_CHANGE
+}
+
+// ============================================================
+// Users do sistema (interface web)
+// ============================================================
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         Role      @default(VIEWER)
+  active       Boolean   @default(true)
+  tokenVersion Int       @default(0) @map("token_version")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  systemAudit SystemAudit[]
+
+  @@map("users")
+}
+
+// ============================================================
+// Eventos de Login/Logoff do Windows
+// Event IDs: 4624 (logon), 4625 (falha logon), 4634 (logoff), 4647 (logoff iniciado pelo usuário)
+// ============================================================
+
+model LoginEvent {
+  id              String   @id @default(cuid())
+  windowsEventId  Int      @map("windows_event_id")
+  username        String
+  domain          String?
+  sourceIp        String?  @map("source_ip")
+  workstation     String?
+  logonType       Int?     @map("logon_type")
+  logonTypeName   String?  @map("logon_type_name")
+  success         Boolean
+  failureReason   String?  @map("failure_reason")
+  timestamp       DateTime
+  windowsRecordId String?  @map("windows_record_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([username])
+  @@index([timestamp])
+  @@index([success])
+  @@index([sourceIp])
+  @@index([windowsEventId])
+  @@map("login_events")
+}
+
+// ============================================================
+// Eventos de Acesso a Arquivos do Windows
+// Event IDs: 4663 (acesso), 4660 (exclusão), 4670 (alteração de permissão)
+// Requer: Auditoria de Acesso a Objetos habilitada + SACLs nas pastas
+// ============================================================
+
+model FileEvent {
+  id              String     @id @default(cuid())
+  windowsEventId  Int        @map("windows_event_id")
+  username        String
+  domain          String?
+  filePath        String     @map("file_path")
+  monitoredFolder String?    @map("monitored_folder")
+  action          FileAction
+  processName     String?    @map("process_name")
+  processId       Int?       @map("process_id")
+  timestamp       DateTime
+  windowsRecordId String?    @map("windows_record_id")
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  @@index([username])
+  @@index([timestamp])
+  @@index([filePath])
+  @@index([action])
+  @@index([monitoredFolder])
+  @@index([windowsEventId])
+  @@map("file_events")
+}
+
+// ============================================================
+// Pastas Monitoradas (configuração do coletor)
+// ============================================================
+
+model MonitoredFolder {
+  id          String   @id @default(cuid())
+  path        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("monitored_folders")
+}
+
+// ============================================================
+// Status do Coletor Windows Service
+// ============================================================
+
+model CollectorStatus {
+  id            String   @id @default(cuid())
+  isRunning     Boolean  @map("is_running")
+  lastSeenAt    DateTime @map("last_seen_at")
+  version       String?
+  hostname      String?
+  eventsToday   Int      @default(0) @map("events_today")
+  loginToday    Int      @default(0) @map("login_today")
+  fileToday     Int      @default(0) @map("file_today")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("collector_status")
+}
+
+// ============================================================
+// Auditoria interna do sistema (quem fez o quê na interface)
+// ============================================================
+
+model SystemAudit {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  detail    String?
+  ip        String?
+  timestamp DateTime @default(now())
+
+  @@index([userId])
+  @@index([timestamp])
+  @@map("system_audit")
+}
