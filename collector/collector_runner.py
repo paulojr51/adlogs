@@ -9,8 +9,9 @@ import logging.handlers
 import os
 import sys
 
-# Garante que o diretorio do script esta no sys.path
+# Garante diretorio correto e sys.path antes de qualquer import local
 _dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(_dir)
 if _dir not in sys.path:
     sys.path.insert(0, _dir)
 
