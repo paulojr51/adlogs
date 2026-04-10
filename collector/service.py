@@ -75,6 +75,7 @@ class ADLogsService(win32serviceutil.ServiceFramework):
         win32event.SetEvent(self.stop_event)
 
     def SvcDoRun(self):
+        self.ReportServiceStatus(win32service.SERVICE_RUNNING)
         servicemanager.LogMsg(
             servicemanager.EVENTLOG_INFORMATION_TYPE,
             servicemanager.PYS_SERVICE_STARTED,
