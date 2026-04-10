@@ -335,7 +335,7 @@ $envLines = @(
     "SERVICE_DISPLAY_NAME=ADLogs - Coletor de Auditoria",
     "SERVICE_DESCRIPTION=Coleta eventos de login e acesso a arquivos do Windows Event Log."
 )
-[System.IO.File]::WriteAllLines("$CollectorDir\.env", $envLines, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllLines("$CollectorDir\.env", $envLines, (New-Object System.Text.UTF8Encoding $false))
 Write-OK ".env gravado"
 
 # --- 8. Teste de conectividade -----------------------------------------------

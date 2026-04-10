@@ -15,7 +15,7 @@ if _dir not in sys.path:
 # (garante funcionar mesmo que python-dotenv falhe ou CWD esteja errado)
 _env_path = os.path.join(_dir, '.env')
 if os.path.exists(_env_path):
-    with open(_env_path, 'r', encoding='utf-8') as _f:
+    with open(_env_path, 'r', encoding='utf-8-sig') as _f:  # utf-8-sig strips BOM
         for _line in _f:
             _line = _line.strip()
             if _line and not _line.startswith('#') and '=' in _line:
