@@ -53,9 +53,9 @@ export class CollectorService {
       return { isRunning: false, lastSeenAt: null };
     }
 
-    // Considera offline se não bateu heartbeat há mais de 2 minutos
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-    const isRunning = status.lastSeenAt > twoMinutesAgo;
+    // Considera offline se não bateu heartbeat há mais de 10 minutos
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const isRunning = status.lastSeenAt > tenMinutesAgo;
 
     return { ...status, isRunning };
   }

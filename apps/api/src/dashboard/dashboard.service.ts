@@ -63,7 +63,10 @@ export class DashboardService {
         failedLogins: failedLoginToday,
         fileEvents: totalFileToday,
       },
-      collector: collectorStatus,
+      collector: collectorStatus ? {
+        ...collectorStatus,
+        isRunning: collectorStatus.lastSeenAt > new Date(Date.now() - 10 * 60 * 1000),
+      } : null,
       recentLoginEvents,
       recentFileEvents,
     };
