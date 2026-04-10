@@ -1,34 +1,89 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    ADLogs Collector - Instalador completo e interativo.
+    ADLogs Collector - Instalador/Atualizador completo e interativo.
 .DESCRIPTION
-    Pede o IP do servidor, instala Python se necessario,
-    configura o .env, cria virtualenv, instala dependencias,
-    testa conexao com banco e registra o Windows Service.
+    Instala Git se necessario, clona o repositorio, configura o ambiente
+    e registra o Windows Service. Em atualizacoes, faz git pull e reinicia.
 .EXAMPLE
     .\install-collector.ps1
+    .\install-collector.ps1 -Update
     .\install-collector.ps1 -Uninstall
     .\install-collector.ps1 -Status
+    .\install-collector.ps1 -GitHubToken "ghp_SEUTOKEN"
 #>
 
 param(
     [switch]$Uninstall,
-    [switch]$Status
+    [switch]$Status,
+    [switch]$Update,
+    [string]$GitHubToken = ""
 )
 
 $ErrorActionPreference = "Stop"
-$ServiceName     = "ADLogsCollector"
-$CollectorDir    = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ServiceName    = "ADLogsCollector"
+$InstallBase    = "C:\adlogs"
+$CollectorDir   = "$InstallBase\collector"
+$RepoUrl        = "https://github.com/paulojr51/adlogs.git"
 $DefaultPassword = "ADLogs2026SecProd"
-$PythonUrl       = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+$PythonUrl      = "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+$GitInstallerUrl = "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe"
 
 function Write-Step { param($m) Write-Host "" ; Write-Host "[>] $m" -ForegroundColor Cyan }
 function Write-OK   { param($m) Write-Host "[OK] $m" -ForegroundColor Green }
 function Write-Warn { param($m) Write-Host "[!]  $m" -ForegroundColor Yellow }
 function Write-Fail { param($m) Write-Host "[X]  $m" -ForegroundColor Red ; exit 1 }
 
-# --- Modo Status -------------------------------------------------------------
+# Monta URL com token se fornecido
+function Get-CloneUrl {
+    if ($GitHubToken) {
+        return "https://${GitHubToken}@github.com/paulojr51/adlogs.git"
+    }
+    return $RepoUrl
+}
+
+# ─── Instala Git se necessario ───────────────────────────────────────────────
+function Ensure-Git {
+    Write-Step "Verificando Git..."
+    try {
+        $v = & git --version 2>&1
+        Write-OK "Git ja instalado: $v"
+        return
+    } catch { }
+
+    Write-Warn "Git nao encontrado. Instalando..."
+
+    # Tenta winget primeiro (Windows 10 1709+)
+    $hasWinget = $null
+    try { $hasWinget = & winget --version 2>&1 } catch { }
+
+    if ($hasWinget) {
+        Write-Host "  Instalando via winget..."
+        $ErrorActionPreference = "Continue"
+        & winget install --id Git.Git -e --source winget --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
+        $ErrorActionPreference = "Stop"
+    } else {
+        Write-Host "  Baixando instalador do Git..."
+        $gitInstaller = "$env:TEMP\adlogs-git.exe"
+        Invoke-WebRequest -Uri $GitInstallerUrl -OutFile $gitInstaller -UseBasicParsing
+        Write-Host "  Instalando Git (aguarde)..."
+        Start-Process $gitInstaller -ArgumentList "/VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /COMPONENTS=ext\reg\shellhere,assoc,assoc_sh" -Wait
+        Remove-Item $gitInstaller -ErrorAction SilentlyContinue
+    }
+
+    # Recarrega PATH
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("Path","User")
+
+    try {
+        $v = & git --version 2>&1
+        Write-OK "Git instalado: $v"
+    } catch {
+        Write-Fail "Falha ao instalar Git. Instale manualmente de https://git-scm.com e tente novamente."
+    }
+}
+
+# ─── Modo Status ─────────────────────────────────────────────────────────────
 if ($Status) {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($svc) {
@@ -50,7 +105,7 @@ if ($Status) {
     exit 0
 }
 
-# --- Modo Desinstalar --------------------------------------------------------
+# ─── Modo Desinstalar ─────────────────────────────────────────────────────────
 if ($Uninstall) {
     Write-Step "Removendo servico $ServiceName..."
     Stop-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -64,14 +119,100 @@ if ($Uninstall) {
     exit 0
 }
 
-# --- Cabecalho ----------------------------------------------------------------
+# ─── Modo Atualizacao ─────────────────────────────────────────────────────────
+if ($Update) {
+    Clear-Host
+    Write-Host "==================================================" -ForegroundColor Cyan
+    Write-Host "  ADLogs Collector - Atualizacao"                   -ForegroundColor Cyan
+    Write-Host "==================================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    if (-not (Test-Path "$InstallBase\.git")) {
+        Write-Fail "Repositorio nao encontrado em $InstallBase. Execute a instalacao completa primeiro."
+    }
+
+    Ensure-Git
+
+    Write-Step "Baixando ultima versao do GitHub..."
+    Set-Location $InstallBase
+    if ($GitHubToken) {
+        & git remote set-url origin (Get-CloneUrl) 2>&1 | Out-Null
+    }
+    & git fetch origin 2>&1 | Out-Null
+    & git reset --hard origin/main
+    Write-OK "Codigo atualizado"
+
+    Write-Step "Parando servico..."
+    Stop-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
+
+    Write-Step "Atualizando dependencias Python..."
+    $VenvPip = Join-Path $CollectorDir "venv\Scripts\pip.exe"
+    $ErrorActionPreference = "Continue"
+    & $VenvPip install -r "$CollectorDir\requirements.txt" --quiet 2>&1 | Out-Null
+    $ErrorActionPreference = "Stop"
+    Write-OK "Dependencias atualizadas"
+
+    Write-Step "Reinstalando e iniciando servico..."
+    $VenvPython = Join-Path $CollectorDir "venv\Scripts\python.exe"
+    Set-Location $CollectorDir
+    & $VenvPython service.py remove 2>&1 | Out-Null
+    Start-Sleep -Seconds 2
+    & $VenvPython service.py install
+    & $VenvPython service.py start
+    Start-Sleep -Seconds 5
+
+    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -eq "Running") {
+        Write-OK "Servico $ServiceName rodando!"
+    } else {
+        Write-Warn "Servico pode nao ter iniciado. Verifique: .\install-collector.ps1 -Status"
+    }
+
+    Write-Host ""
+    Write-Host "==================================================" -ForegroundColor Green
+    Write-Host "  Atualizacao concluida!"                           -ForegroundColor Green
+    Write-Host "==================================================" -ForegroundColor Cyan
+    exit 0
+}
+
+# =============================================================================
+# INSTALACAO COMPLETA
+# =============================================================================
 Clear-Host
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "  ADLogs Collector - Instalador"                   -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# --- Coleta de informacoes ---------------------------------------------------
+# --- 1. Git ------------------------------------------------------------------
+Ensure-Git
+
+# --- 2. Clonar ou atualizar repositorio --------------------------------------
+Write-Step "Obtendo codigo do repositorio..."
+if (Test-Path "$InstallBase\.git") {
+    Write-Warn "Instalacao anterior encontrada em $InstallBase. Atualizando repositorio..."
+    Set-Location $InstallBase
+    if ($GitHubToken) { & git remote set-url origin (Get-CloneUrl) 2>&1 | Out-Null }
+    & git fetch origin 2>&1 | Out-Null
+    & git reset --hard origin/main
+    Write-OK "Repositorio atualizado"
+} else {
+    if (Test-Path $InstallBase) {
+        Write-Warn "Pasta $InstallBase existe mas nao e repositorio git. Renomeando para backup..."
+        Rename-Item $InstallBase "$InstallBase.backup.$(Get-Date -Format 'yyyyMMddHHmmss')" -ErrorAction SilentlyContinue
+    }
+    & git clone (Get-CloneUrl) $InstallBase
+    Write-OK "Repositorio clonado em $InstallBase"
+}
+
+# Garante que $CollectorDir existe
+if (-not (Test-Path $CollectorDir)) {
+    Write-Fail "Pasta collector nao encontrada em $CollectorDir. Verifique o repositorio."
+}
+
+# --- 3. Coleta de informacoes ------------------------------------------------
+Write-Host ""
 Write-Host "Informe os dados do servidor ADLogs:" -ForegroundColor White
 Write-Host ""
 
@@ -99,7 +240,7 @@ Write-Host ""
 $confirm = (Read-Host "Confirmar instalacao? [S/n]").Trim()
 if ($confirm -match "^[Nn]$") { Write-Host "Cancelado." ; exit 0 }
 
-# --- 1. Python ---------------------------------------------------------------
+# --- 4. Python ---------------------------------------------------------------
 Write-Step "Verificando Python 3.10+..."
 $PythonExe = $null
 
@@ -133,7 +274,7 @@ if (-not $PythonExe) {
     }
 }
 
-# --- 2. Ambiente virtual -----------------------------------------------------
+# --- 5. Ambiente virtual -----------------------------------------------------
 Write-Step "Criando ambiente virtual Python..."
 $VenvDir    = Join-Path $CollectorDir "venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
@@ -146,7 +287,7 @@ if (Test-Path $VenvDir) {
 & $PythonExe -m venv $VenvDir
 Write-OK "Ambiente virtual criado"
 
-# --- 3. Dependencias ---------------------------------------------------------
+# --- 6. Dependencias ---------------------------------------------------------
 Write-Step "Instalando dependencias Python..."
 $ErrorActionPreference = "Continue"
 & $VenvPip install --upgrade pip --quiet 2>&1 | Out-Null
@@ -155,7 +296,7 @@ if ($LASTEXITCODE -ne 0) { Write-Fail "Falha ao instalar dependencias. Verifique
 $ErrorActionPreference = "Stop"
 Write-OK "Dependencias instaladas"
 
-# --- 4. Arquivo .env ---------------------------------------------------------
+# --- 7. Arquivo .env ---------------------------------------------------------
 Write-Step "Gravando .env..."
 $envLines = @(
     "DB_URL=postgresql://adlogs:${DBPassword}@${ServerIP}:${DBPort}/adlogs",
@@ -169,7 +310,7 @@ $envLines = @(
 [System.IO.File]::WriteAllLines("$CollectorDir\.env", $envLines, [System.Text.Encoding]::UTF8)
 Write-OK ".env gravado"
 
-# --- 5. Teste de conectividade -----------------------------------------------
+# --- 8. Teste de conectividade -----------------------------------------------
 Write-Step "Testando conexao com o banco em ${ServerIP}:${DBPort}..."
 $testScript = "$env:TEMP\adlogs_test.py"
 @"
@@ -207,7 +348,7 @@ if ("$result" -match "^OK") {
     if ($cont -notmatch "^[Ss]$") { exit 1 }
 }
 
-# --- 6. Remover versao anterior ----------------------------------------------
+# --- 9. Remover versao anterior ----------------------------------------------
 $oldSvc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($oldSvc) {
     Write-Step "Removendo instalacao anterior..."
@@ -219,7 +360,7 @@ if ($oldSvc) {
     Write-OK "Versao anterior removida"
 }
 
-# --- 7. Instalar e iniciar servico -------------------------------------------
+# --- 10. Instalar e iniciar servico ------------------------------------------
 Write-Step "Instalando Windows Service..."
 Set-Location $CollectorDir
 & $VenvPython service.py install
@@ -228,7 +369,7 @@ Write-Step "Iniciando servico..."
 & $VenvPython service.py start
 Start-Sleep -Seconds 6
 
-# --- 8. Verificacao final ----------------------------------------------------
+# --- 11. Verificacao final ---------------------------------------------------
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -eq "Running") {
     Write-OK "Servico $ServiceName rodando!"
@@ -249,15 +390,17 @@ if (Test-Path $logFile) {
 # --- Resumo ------------------------------------------------------------------
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "  Instalacao concluida!" -ForegroundColor Green
+Write-Host "  Instalacao concluida!"                           -ForegroundColor Green
 Write-Host ""
-Write-Host "  Servidor ADLogs : $ServerIP" -ForegroundColor White
-Write-Host "  Servico Windows : $ServiceName" -ForegroundColor White
+Write-Host "  Servidor ADLogs : $ServerIP"         -ForegroundColor White
+Write-Host "  Servico Windows : $ServiceName"      -ForegroundColor White
+Write-Host "  Arquivos em     : $CollectorDir"     -ForegroundColor White
 Write-Host ""
 Write-Host "  Comandos uteis:" -ForegroundColor White
-Write-Host "    Status    : .\install-collector.ps1 -Status" -ForegroundColor Gray
-Write-Host "    Reiniciar : Restart-Service $ServiceName" -ForegroundColor Gray
-Write-Host "    Logs      : Get-Content 'C:\ProgramData\ADLogs\collector.log' -Wait -Tail 20" -ForegroundColor Gray
-Write-Host "    Remover   : .\install-collector.ps1 -Uninstall" -ForegroundColor Gray
-Write-Host "    Debug     : $VenvPython $CollectorDir\service.py debug" -ForegroundColor Gray
+Write-Host "    Status    : .\install-collector.ps1 -Status"                                                      -ForegroundColor Gray
+Write-Host "    Atualizar : .\install-collector.ps1 -Update"                                                      -ForegroundColor Gray
+Write-Host "    Reiniciar : Restart-Service $ServiceName"                                                         -ForegroundColor Gray
+Write-Host "    Logs      : Get-Content 'C:\ProgramData\ADLogs\collector.log' -Wait -Tail 20"                    -ForegroundColor Gray
+Write-Host "    Remover   : .\install-collector.ps1 -Uninstall"                                                   -ForegroundColor Gray
+Write-Host "    Debug     : $VenvPython $CollectorDir\service.py debug"                                           -ForegroundColor Gray
 Write-Host "==================================================" -ForegroundColor Cyan

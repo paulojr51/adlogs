@@ -1,0 +1,108 @@
+==============================================================
+  ADLogs — Procedimento de Atualizacao
+==============================================================
+
+
+QUANDO ATUALIZAR
+----------------
+Toda vez que o desenvolvedor fizer alteracoes e subir no GitHub,
+basta rodar o comando de atualizacao em cada servidor/coletor.
+
+
+1. SUBIR ATUALIZACAO (no computador de desenvolvimento)
+-------------------------------------------------------
+  git add <arquivos alterados>
+  git commit -m "descricao da mudanca"
+  git push
+
+  Pronto. O GitHub tem a versao mais recente.
+
+
+2. ATUALIZAR SERVIDOR LINUX (onde roda o Docker)
+------------------------------------------------
+  sudo bash /opt/adlogs/install-server.sh --update
+
+  O script vai:
+    a) Baixar o codigo mais recente do GitHub (git pull)
+    b) Reconstruir as imagens Docker
+    c) Reiniciar os containers
+    d) Confirmar que a API esta respondendo
+
+  Repositorio privado? Passe o token:
+    sudo bash /opt/adlogs/install-server.sh --update --token ghp_SEUTOKEN
+
+
+3. ATUALIZAR COLETOR WINDOWS (servidor AD)
+------------------------------------------
+  PowerShell como Administrador:
+
+    cd C:\adlogs\collector
+    .\install-collector.ps1 -Update
+
+  O script vai:
+    a) Baixar o codigo mais recente do GitHub (git pull)
+    b) Parar o servico Windows
+    c) Atualizar as dependencias Python
+    d) Reinstalar e reiniciar o servico
+
+  Repositorio privado? Passe o token:
+    .\install-collector.ps1 -Update -GitHubToken "ghp_SEUTOKEN"
+
+
+4. PRIMEIRO ACESSO EM UM CLIENTE NOVO
+--------------------------------------
+
+  Servidor Linux (Ubuntu 24.04):
+    1. Baixe apenas o instalador:
+         wget https://raw.githubusercontent.com/paulojr51/adlogs/main/install-server.sh
+         # (se privado: use o link com token ou copie via SCP)
+    2. Execute:
+         sudo bash install-server.sh
+
+    O instalador vai:
+      - Instalar Git automaticamente
+      - Clonar o repositorio em /opt/adlogs
+      - Instalar Docker
+      - Configurar .env interativamente
+      - Subir todos os containers
+
+  Coletor Windows (PowerShell como Admin):
+    1. Baixe apenas o instalador (copie pelo GitHub ou SCP)
+    2. Execute:
+         .\install-collector.ps1
+         # ou com token: .\install-collector.ps1 -GitHubToken "ghp_SEUTOKEN"
+
+    O instalador vai:
+      - Instalar Git automaticamente
+      - Clonar o repositorio em C:\adlogs
+      - Instalar Python automaticamente
+      - Configurar .env interativamente
+      - Instalar e iniciar o Windows Service
+
+
+5. REPOSITORIO PRIVADO — TOKEN DE LEITURA
+------------------------------------------
+  Para nao precisar digitar o token toda vez, crie um token
+  com permissao "Contents: Read-only" no GitHub:
+
+    GitHub -> Settings -> Developer settings -> Personal access tokens
+    -> Fine-grained tokens -> Generate new token
+    -> Selecione o repositorio "adlogs"
+    -> Permissions -> Contents -> Read-only
+
+  Guarde o token (comeca com ghp_) e use com -GitHubToken ou --token.
+
+
+6. CHECKLIST POS-ATUALIZACAO
+-----------------------------
+  Servidor Linux:
+    [ ] API respondendo: curl http://IP/api/health
+    [ ] Frontend abrindo: http://IP no navegador
+    [ ] Containers rodando: docker compose -f /opt/adlogs/docker-compose.production.yml ps
+
+  Coletor Windows:
+    [ ] Servico rodando: Get-Service ADLogsCollector
+    [ ] Logs sem erros: Get-Content 'C:\ProgramData\ADLogs\collector.log' -Tail 20
+    [ ] Eventos chegando no banco (ver dashboard)
+
+==============================================================
