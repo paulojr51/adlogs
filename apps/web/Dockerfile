@@ -15,8 +15,8 @@ RUN pnpm install --frozen-lockfile --shamefully-hoist
 FROM deps AS shared-build
 COPY packages/tsconfig/ packages/tsconfig/
 COPY packages/shared/ packages/shared/
-RUN node_modules/.bin/tsc -p packages/shared/tsconfig.json
 RUN node_modules/.bin/prisma generate --schema=packages/shared/prisma/schema.prisma
+RUN node_modules/.bin/tsc -p packages/shared/tsconfig.json
 
 # Build Web
 FROM shared-build AS web-build
