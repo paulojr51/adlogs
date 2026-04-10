@@ -4,5 +4,8 @@ set -e
 echo "Running database migrations..."
 node_modules/.bin/prisma migrate deploy --schema=packages/shared/prisma/schema.prisma
 
+echo "Running database seed..."
+node packages/shared/prisma/seed.mjs
+
 echo "Starting API..."
 exec node dist/main
