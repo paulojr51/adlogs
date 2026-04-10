@@ -168,9 +168,11 @@ if ($Update) {
 
     Write-Step "Baixando ultima versao do GitHub..."
     Set-Location $InstallBase
+    $ErrorActionPreference = "Continue"
     if ($GitHubToken) { & git remote set-url origin (Get-CloneUrl) 2>&1 | Out-Null }
     & git fetch origin 2>&1 | Out-Null
-    & git reset --hard origin/main
+    & git reset --hard origin/main 2>&1 | Out-Null
+    $ErrorActionPreference = "Stop"
     Write-OK "Codigo atualizado"
 
     $VenvPython = Join-Path $CollectorDir "venv\Scripts\python.exe"
@@ -220,9 +222,11 @@ Write-Step "Obtendo codigo do repositorio..."
 if (Test-Path "$InstallBase\.git") {
     Write-Warn "Instalacao anterior encontrada. Atualizando repositorio..."
     Set-Location $InstallBase
+    $ErrorActionPreference = "Continue"
     if ($GitHubToken) { & git remote set-url origin (Get-CloneUrl) 2>&1 | Out-Null }
     & git fetch origin 2>&1 | Out-Null
-    & git reset --hard origin/main
+    & git reset --hard origin/main 2>&1 | Out-Null
+    $ErrorActionPreference = "Stop"
     Write-OK "Repositorio atualizado"
 } else {
     if (Test-Path $InstallBase) {
