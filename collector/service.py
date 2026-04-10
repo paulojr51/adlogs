@@ -64,9 +64,16 @@ class ADLogsService(win32serviceutil.ServiceFramework):
     _svc_description_ = SERVICE_DESCRIPTION
 
     def __init__(self, args):
-        win32serviceutil.ServiceFramework.__init__(self, args)
-        self.stop_event = win32event.CreateEvent(None, 0, 0, None)
-        self.collector = Collector()
+        try:
+            win32serviceutil.ServiceFramework.__init__(self, args)
+            self.stop_event = win32event.CreateEvent(None, 0, 0, None)
+            self.collector = Collector()
+        except Exception as exc:
+            import traceback
+            err_path = os.path.join(LOG_DIR, 'service_init_error.txt')
+            with open(err_path, 'w', encoding='utf-8') as f:
+                f.write(traceback.format_exc())
+            raise
 
     def SvcStop(self):
         logger.info('Recebido sinal de parada')

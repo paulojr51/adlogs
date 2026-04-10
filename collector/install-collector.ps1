@@ -153,6 +153,15 @@ if ($Update) {
     $ErrorActionPreference = "Stop"
     Write-OK "Dependencias atualizadas"
 
+    Write-Step "Registrando pywin32 no sistema..."
+    $ErrorActionPreference = "Continue"
+    $postInstall = (& $VenvPython -c "import os,sys; print(next((os.path.join(p,'pywin32_postinstall.py') for p in sys.path if os.path.exists(os.path.join(p,'pywin32_postinstall.py'))), ''))" 2>&1).Trim()
+    if ($postInstall -and (Test-Path $postInstall)) {
+        & $VenvPython $postInstall -install 2>&1 | Out-Null
+        Write-OK "pywin32 registrado"
+    }
+    $ErrorActionPreference = "Stop"
+
     Write-Step "Reinstalando e iniciando servico..."
     $VenvPython = Join-Path $CollectorDir "venv\Scripts\python.exe"
     Set-Location $CollectorDir
@@ -295,6 +304,18 @@ $ErrorActionPreference = "Continue"
 if ($LASTEXITCODE -ne 0) { Write-Fail "Falha ao instalar dependencias. Verifique a conexao com a internet." }
 $ErrorActionPreference = "Stop"
 Write-OK "Dependencias instaladas"
+
+# Registra DLLs do pywin32 no sistema (necessario para Windows Service)
+Write-Step "Registrando pywin32 no sistema..."
+$ErrorActionPreference = "Continue"
+$postInstall = (& $VenvPython -c "import os,sys; print(next((os.path.join(p,'pywin32_postinstall.py') for p in sys.path if os.path.exists(os.path.join(p,'pywin32_postinstall.py'))), ''))" 2>&1).Trim()
+if ($postInstall -and (Test-Path $postInstall)) {
+    & $VenvPython $postInstall -install 2>&1 | Out-Null
+    Write-OK "pywin32 registrado"
+} else {
+    Write-Warn "pywin32_postinstall.py nao encontrado - continuando sem registro"
+}
+$ErrorActionPreference = "Stop"
 
 # --- 7. Arquivo .env ---------------------------------------------------------
 Write-Step "Gravando .env..."
