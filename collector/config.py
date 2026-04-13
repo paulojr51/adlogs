@@ -53,12 +53,29 @@ LOGON_TYPES = {
     11: 'CachedInteractive',
 }
 
-# Mapeamento de ações de arquivo por Event ID + AccessMask
+# Mapeamento de ações de arquivo por AccessMask (hex exato)
 ACCESS_MASK_TO_ACTION = {
     '0x1': 'READ',
     '0x2': 'WRITE',
+    '0x4': 'WRITE',
+    '0x6': 'WRITE',
     '0x40': 'WRITE',
     '0x80': 'READ',
     '0x100': 'READ',
     '0x10000': 'DELETE',
+}
+
+# Formato %% usado pelo Windows 2016/2019/2022 em vez de hex
+WINDOWS_MSG_TO_ACTION = {
+    '%%4416': 'READ',    # ReadData / ListDirectory
+    '%%4417': 'WRITE',   # WriteData / AddFile
+    '%%4418': 'WRITE',   # AppendData / AddSubdirectory
+    '%%4419': 'READ',    # ReadEA
+    '%%4420': 'WRITE',   # WriteEA
+    '%%4421': 'READ',    # Execute / Traverse
+    '%%4423': 'READ',    # ReadAttributes
+    '%%4424': 'WRITE',   # WriteAttributes
+    '%%1537': 'DELETE',  # DELETE
+    '%%1538': 'READ',    # READ_CONTROL
+    '%%1539': 'WRITE',   # WRITE_DAC (alteração de permissão)
 }

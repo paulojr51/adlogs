@@ -33,7 +33,7 @@ if _dir not in sys.path:
 
 import win32evtlog  # type: ignore[import]
 
-from config import LOGIN_EVENT_IDS, FILE_EVENT_IDS, LOGON_TYPES, ACCESS_MASK_TO_ACTION, DB_URL
+from config import LOGIN_EVENT_IDS, FILE_EVENT_IDS, LOGON_TYPES, DB_URL
 from db_writer import insert_login_events, insert_file_events
 from event_reader import _clean_ip, _access_mask_to_action
 

@@ -20,7 +20,7 @@ import win32evtlogutil  # type: ignore[import]
 import win32con  # type: ignore[import]
 import winerror  # type: ignore[import]
 
-from config import LOGIN_EVENT_IDS, FILE_EVENT_IDS, LOGON_TYPES, ACCESS_MASK_TO_ACTION
+from config import LOGIN_EVENT_IDS, FILE_EVENT_IDS, LOGON_TYPES, ACCESS_MASK_TO_ACTION, WINDOWS_MSG_TO_ACTION
 
 logger = logging.getLogger('adlogs.reader')
 
@@ -282,18 +282,34 @@ def _clean_ip(ip: str | None) -> str | None:
 
 
 def _access_mask_to_action(access_mask: str) -> str:
-    """Converte o AccessMask do Windows em uma ação legível."""
-    mask = access_mask.strip().lower()
+    """Converte o AccessMask do Windows em uma acao legivel.
+
+    O Windows reporta o AccessMask em dois formatos:
+    - Hex: '0x2', '0x10000', etc.
+    - Mensagem: '%%4416', '%%1537', etc. (Windows 2016/2019/2022+)
+    """
+    mask = access_mask.strip()
+
+    # Formato %% (Windows moderno)
+    if mask.startswith('%%'):
+        return WINDOWS_MSG_TO_ACTION.get(mask, 'READ')
+
+    # Hex exato
+    mask_lower = mask.lower()
     for pattern, action in ACCESS_MASK_TO_ACTION.items():
-        if mask == pattern.lower():
+        if mask_lower == pattern.lower():
             return action
-    # Heurística: se tem bit de delete
+
+    # Hex com multiplos bits — verifica flags individualmente
     try:
-        mask_int = int(access_mask, 16)
-        if mask_int & 0x10000:
+        mask_int = int(mask, 16)
+        if mask_int & 0x10000:  # DELETE
             return 'DELETE'
-        if mask_int & 0x4 or mask_int & 0x40:
+        if mask_int & 0x2 or mask_int & 0x4 or mask_int & 0x40:  # WriteData/AppendData/DeleteChild
             return 'WRITE'
+        if mask_int & 0x1 or mask_int & 0x80 or mask_int & 0x100:  # ReadData/ReadAttributes
+            return 'READ'
     except (ValueError, TypeError):
         pass
+
     return 'READ'
