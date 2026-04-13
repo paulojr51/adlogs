@@ -26,10 +26,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Garante que o diretório do script está no sys.path
+# Garante diretorio correto e carrega .env antes de importar config
 _dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(_dir)
 if _dir not in sys.path:
     sys.path.insert(0, _dir)
+
+_env_path = os.path.join(_dir, '.env')
+if os.path.exists(_env_path):
+    with open(_env_path, 'r', encoding='utf-8-sig') as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith('#') and '=' in _line:
+                _key, _val = _line.split('=', 1)
+                os.environ.setdefault(_key.strip(), _val.strip())
 
 import win32evtlog  # type: ignore[import]
 
