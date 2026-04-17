@@ -7,9 +7,9 @@ export class DashboardService {
 
   async getSummary() {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
 
     const [
       totalLoginToday,
@@ -74,8 +74,8 @@ export class DashboardService {
 
   async getLoginChart(days: number = 7) {
     const from = new Date();
-    from.setDate(from.getDate() - days);
-    from.setHours(0, 0, 0, 0);
+    from.setUTCDate(from.getUTCDate() - days);
+    from.setUTCHours(0, 0, 0, 0);
 
     const events = await this.prisma.loginEvent.findMany({
       where: { timestamp: { gte: from } },
@@ -102,7 +102,7 @@ export class DashboardService {
 
   async getTopUsers(limit: number = 10) {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     const result = await this.prisma.loginEvent.groupBy({
       by: ['username'],
