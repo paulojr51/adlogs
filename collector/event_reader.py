@@ -239,14 +239,19 @@ class EventReader:
                 except (ValueError, TypeError):
                     process_id = None
                 access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
-                try:
-                    mask_int = int(access_mask, 16)
-                except (ValueError, TypeError):
-                    return None
-                # Deleção real: tem DELETE (0x10000) sem bits de escrita (WriteData|AppendData|WriteAttributes)
-                # Máscaras compostas com escrita (ex: 0x13019f) = Office abrindo arquivo para editar, não exclusão
-                if not (mask_int & 0x10000) or (mask_int & 0x106):
-                    return None
+                if access_mask.startswith('%%'):
+                    # Formato %%NNNN usado em Windows 2016/2019/2022+
+                    if WINDOWS_MSG_TO_ACTION.get(access_mask) != 'DELETE':
+                        return None
+                else:
+                    # Formato hex: só DELETE sem bits de escrita
+                    # Máscaras compostas com escrita = Office abrindo para editar, não exclusão
+                    try:
+                        mask_int = int(access_mask, 16)
+                    except (ValueError, TypeError):
+                        return None
+                    if not (mask_int & 0x10000) or (mask_int & 0x106):
+                        return None
                 action = 'DELETE'
                 # Ignora arquivos temporários internos (Office .tmp, ~$lockfiles, .crdownload)
                 fname = os.path.basename(file_path).lower() if file_path else ''
