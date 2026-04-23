@@ -34,9 +34,10 @@ LOGIN_EVENT_IDS = {
 }
 
 # IDs de eventos de Arquivo
+# Nota: 4660 (Objeto excluído) foi removido pois não contém o nome do arquivo.
+# A exclusão já é capturada pelo 4663 com AccessMask de DELETE (0x10000).
 FILE_EVENT_IDS = {
     4663: 'Acesso a objeto tentado',
-    4660: 'Objeto excluído',
     4670: 'Permissões de objeto alteradas',
 }
 
