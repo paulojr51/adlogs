@@ -17,12 +17,12 @@ interface MonitoredFolder {
 
 interface CollectorStatus {
   isRunning: boolean;
-  lastSeenAt?: string;
+  lastSeenAt?: string | null;
   version?: string;
   hostname?: string;
-  eventsToday: number;
-  loginToday: number;
-  fileToday: number;
+  eventsToday?: number;
+  loginToday?: number;
+  fileToday?: number;
 }
 
 export default function ConfiguracoesPage() {

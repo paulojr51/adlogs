@@ -50,7 +50,7 @@ export class CollectorService {
     });
 
     if (!status) {
-      return { isRunning: false, lastSeenAt: null };
+      return { isRunning: false, lastSeenAt: null, eventsToday: 0, loginToday: 0, fileToday: 0 };
     }
 
     // Considera offline se não bateu heartbeat há mais de 10 minutos
