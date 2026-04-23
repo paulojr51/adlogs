@@ -59,7 +59,7 @@ class EventReader:
                     break
 
                 for record in batch:
-                    if record.EventID not in LOGIN_EVENT_IDS:
+                    if (record.EventID & 0xFFFF) not in LOGIN_EVENT_IDS:
                         continue
 
                     record_number = record.RecordNumber
@@ -105,7 +105,7 @@ class EventReader:
                     break
 
                 for record in batch:
-                    if record.EventID not in FILE_EVENT_IDS:
+                    if (record.EventID & 0xFFFF) not in FILE_EVENT_IDS:
                         continue
 
                     record_number = record.RecordNumber
