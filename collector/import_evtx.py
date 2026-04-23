@@ -235,8 +235,18 @@ def _parse_file(record: Any, event_id: int, strings: list, ts: datetime) -> dict
             except (ValueError, TypeError):
                 process_id = None
             access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
-            action = _access_mask_to_action(access_mask)
-            if action != 'DELETE':
+            try:
+                mask_int = int(access_mask, 16)
+            except (ValueError, TypeError):
+                return None
+            # Deleção real: tem DELETE (0x10000) sem bits de escrita (WriteData|AppendData|WriteAttributes)
+            # Máscaras compostas com escrita (ex: 0x13019f) = Office abrindo arquivo para editar, não exclusão
+            if not (mask_int & 0x10000) or (mask_int & 0x106):
+                return None
+            action = 'DELETE'
+            # Ignora arquivos temporários internos (Office .tmp, ~$lockfiles, .crdownload)
+            fname = os.path.basename(file_path).lower() if file_path else ''
+            if fname.endswith('.tmp') or fname.startswith('~$') or fname.endswith('.crdownload'):
                 return None
 
         elif event_id == 4670:
