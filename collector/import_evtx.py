@@ -221,12 +221,23 @@ def _parse_file(record: Any, event_id: int, strings: list, ts: datetime) -> dict
             access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
             action = _access_mask_to_action(access_mask)
 
-        elif event_id == 4660:
+        elif event_id == 4656:  # Handle solicitado — captura exclusão de arquivo
+            object_type = strings[5] if len(strings) > 5 else ''
+            if object_type != 'File':
+                return None
             username = strings[1] if len(strings) > 1 else ''
             domain = strings[2] if len(strings) > 2 else ''
             file_path = strings[6] if len(strings) > 6 else ''
-            process_name = strings[10] if len(strings) > 10 else None
-            action = 'DELETE'
+            process_name = strings[12] if len(strings) > 12 else None
+            process_id_str = strings[11] if len(strings) > 11 else '0'
+            try:
+                process_id = int(process_id_str, 16)
+            except (ValueError, TypeError):
+                process_id = None
+            access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
+            action = _access_mask_to_action(access_mask)
+            if action != 'DELETE':
+                return None
 
         elif event_id == 4670:
             username = strings[1] if len(strings) > 1 else ''

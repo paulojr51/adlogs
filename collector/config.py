@@ -35,9 +35,11 @@ LOGIN_EVENT_IDS = {
 
 # IDs de eventos de Arquivo
 # Nota: 4660 (Objeto excluído) foi removido pois não contém o nome do arquivo.
-# A exclusão já é capturada pelo 4663 com AccessMask de DELETE (0x10000).
+# 4656 (Handle solicitado) é usado para capturar exclusão de arquivos — o Windows
+# gera 4656 com DELETE quando um arquivo é aberto para exclusão, mas não gera 4663.
 FILE_EVENT_IDS = {
     4663: 'Acesso a objeto tentado',
+    4656: 'Handle a objeto solicitado',
     4670: 'Permissões de objeto alteradas',
 }
 

@@ -3,11 +3,16 @@
 Lê eventos de segurança do Windows em tempo real usando a API win32evtlog.
 Processa:
   - Login/Logoff: Event IDs 4624, 4625, 4634, 4647, 4648
-  - Acesso a arquivos: Event IDs 4663, 4660, 4670
+  - Acesso a arquivos: Event IDs 4663, 4656, 4670
 
 Pré-requisito para eventos de arquivo:
   1. Política de auditoria: Acesso a Objetos deve estar habilitada
   2. SACLs configuradas nas pastas monitoradas
+
+Nota sobre exclusão de arquivos:
+  O Windows gera 4663 com AccessMask DELETE (0x10000) para exclusão de PASTAS,
+  mas para exclusão de ARQUIVOS gera apenas 4656 (handle solicitado com DELETE).
+  Por isso capturamos 4656 especificamente para detectar exclusões de arquivos.
 """
 import logging
 import socket
@@ -219,12 +224,23 @@ class EventReader:
                 access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
                 action = _access_mask_to_action(access_mask)
 
-            elif event_id == 4660:  # Objeto excluído
+            elif event_id == 4656:  # Handle solicitado — captura exclusão de arquivo
+                object_type = strings[5] if len(strings) > 5 else ''
+                if object_type != 'File':
+                    return None
                 username = strings[1] if len(strings) > 1 else ''
                 domain = strings[2] if len(strings) > 2 else ''
                 file_path = strings[6] if len(strings) > 6 else ''
-                process_name = strings[10] if len(strings) > 10 else None
-                action = 'DELETE'
+                process_name = strings[12] if len(strings) > 12 else None
+                process_id_str = strings[11] if len(strings) > 11 else '0'
+                try:
+                    process_id = int(process_id_str, 16)
+                except (ValueError, TypeError):
+                    process_id = None
+                access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
+                action = _access_mask_to_action(access_mask)
+                if action != 'DELETE':
+                    return None
 
             elif event_id == 4670:  # Permissões alteradas
                 username = strings[1] if len(strings) > 1 else ''
