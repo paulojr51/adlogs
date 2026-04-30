@@ -217,12 +217,13 @@ class EventReader:
                 domain = strings[2] if len(strings) > 2 else ''
                 file_path = strings[6] if len(strings) > 6 else ''
                 process_name = strings[11] if len(strings) > 11 else None
-                process_id_str = strings[9] if len(strings) > 9 else '0'
+                # 4663: [8]=AccessList [9]=AccessMask [10]=ProcessId [11]=ProcessName
+                process_id_str = strings[10] if len(strings) > 10 else '0'
                 try:
                     process_id = int(process_id_str, 16)
                 except (ValueError, TypeError):
                     process_id = None
-                access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
+                access_mask = strings[9].strip() if len(strings) > 9 else '0x0'
                 action = _access_mask_to_action(access_mask)
 
             elif event_id == 4656:  # Handle solicitado — captura exclusão de arquivo
@@ -232,13 +233,14 @@ class EventReader:
                 username = strings[1] if len(strings) > 1 else ''
                 domain = strings[2] if len(strings) > 2 else ''
                 file_path = strings[6] if len(strings) > 6 else ''
-                process_name = strings[12] if len(strings) > 12 else None
-                process_id_str = strings[11] if len(strings) > 11 else '0'
+                # 4656: [9]=AccessList [10]=AccessReason [11]=AccessMask [14]=ProcessId [15]=ProcessName
+                process_name = strings[15] if len(strings) > 15 else None
+                process_id_str = strings[14] if len(strings) > 14 else '0'
                 try:
                     process_id = int(process_id_str, 16)
                 except (ValueError, TypeError):
                     process_id = None
-                access_mask = strings[10].strip() if len(strings) > 10 else '0x0'
+                access_mask = strings[11].strip() if len(strings) > 11 else '0x0'
                 if access_mask.startswith('%%'):
                     # Formato %%NNNN usado em Windows 2016/2019/2022+
                     if WINDOWS_MSG_TO_ACTION.get(access_mask) != 'DELETE':

@@ -60,8 +60,8 @@ export default function ArquivosPage() {
       if (username) params.set('username', username);
       if (filePath) params.set('filePath', filePath);
       if (action) params.set('action', action);
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
+      if (from) params.set('from', new Date(from).toISOString());
+      if (to) params.set('to', new Date(to).toISOString());
       params.set('limit', String(limit));
       params.set('offset', String(page * limit));
 

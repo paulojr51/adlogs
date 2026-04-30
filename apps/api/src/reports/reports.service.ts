@@ -1,6 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+const ACTION_LABELS: Record<string, string> = {
+  READ: 'Leitura',
+  WRITE: 'Escrita',
+  DELETE: 'Exclusão',
+  RENAME: 'Renomeação',
+  PERMISSION_CHANGE: 'Permissão',
+};
+
 export interface UserActivityItem {
   type: 'LOGIN' | 'LOGOFF' | 'LOGIN_FAILED' | 'FILE';
   timestamp: Date;
@@ -74,7 +82,7 @@ export class ReportsService {
       ...fileEvents.map((e) => ({
         type: 'FILE' as const,
         timestamp: e.timestamp,
-        detail: `${e.action} — ${e.filePath}`,
+        detail: `${ACTION_LABELS[e.action] ?? e.action} — ${e.filePath}`,
         extra: {
           id: e.id,
           action: e.action,
@@ -102,11 +110,12 @@ export class ReportsService {
    * Agrupa por usuário e tipo de ação.
    */
   async getFolderActivity(folderPath: string, from: Date, to: Date) {
+    const safePath = folderPath.replace(/\\/g, '\\\\');
     const events = await this.prisma.fileEvent.findMany({
       where: {
         OR: [
-          { monitoredFolder: { contains: folderPath, mode: 'insensitive' } },
-          { filePath: { contains: folderPath, mode: 'insensitive' } },
+          { monitoredFolder: { contains: safePath, mode: 'insensitive' } },
+          { filePath: { contains: safePath, mode: 'insensitive' } },
         ],
         timestamp: { gte: from, lte: to },
       },
@@ -165,11 +174,12 @@ export class ReportsService {
     from: Date,
     to: Date,
   ) {
+    const safePath = folderPath.replace(/\\/g, '\\\\');
     const events = await this.prisma.fileEvent.findMany({
       where: {
         OR: [
-          { monitoredFolder: { contains: folderPath, mode: 'insensitive' } },
-          { filePath: { contains: folderPath, mode: 'insensitive' } },
+          { monitoredFolder: { contains: safePath, mode: 'insensitive' } },
+          { filePath: { contains: safePath, mode: 'insensitive' } },
         ],
         action: action as never,
         timestamp: { gte: from, lte: to },

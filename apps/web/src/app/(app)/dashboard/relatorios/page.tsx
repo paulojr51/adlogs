@@ -176,7 +176,11 @@ function TabUsuario() {
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ username: username.trim(), from, to });
+      const params = new URLSearchParams({
+        username: username.trim(),
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+      });
       const data = await api.get<UserActivityResult>(`/reports/user-activity?${params}`);
       setResult(data);
       if (data.timeline.length === 0) toast.info('Nenhum evento encontrado para este usuário no período.');
@@ -296,7 +300,11 @@ function TabPasta() {
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ folderPath: folderPath.trim(), from, to });
+      const params = new URLSearchParams({
+        folderPath: folderPath.trim(),
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+      });
       const data = await api.get<FolderActivityResult>(`/reports/folder-activity?${params}`);
       setResult(data);
       setShowEvents(false);
@@ -434,7 +442,12 @@ function TabAcao() {
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ folderPath: folderPath.trim(), action, from, to });
+      const params = new URLSearchParams({
+        folderPath: folderPath.trim(),
+        action,
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+      });
       const data = await api.get<FolderActionResult>(`/reports/folder-action?${params}`);
       setResult(data);
       if (data.total === 0) toast.info('Nenhum evento encontrado com esses critérios.');
