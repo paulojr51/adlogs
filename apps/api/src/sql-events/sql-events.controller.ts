@@ -1,0 +1,29 @@
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { ServerApiKeyGuard } from '../auth/guards/server-api-key.guard';
+import { CurrentServer } from '../auth/decorators/current-server.decorator';
+import type { Server } from '@adlogs/shared';
+import { SqlEventsService, SqlEventsFilterDto } from './sql-events.service';
+
+class BatchSqlEventsDto {
+  events!: Parameters<SqlEventsService['ingestBatch']>[1];
+}
+
+@Controller()
+export class SqlEventsController {
+  constructor(private readonly sqlEventsService: SqlEventsService) {}
+
+  @Get('events/sql')
+  @UseGuards(RolesGuard)
+  @Roles('SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER')
+  findAll(@Query() filter: SqlEventsFilterDto) {
+    return this.sqlEventsService.findAll(filter);
+  }
+
+  @Post('collector/events/sql')
+  @UseGuards(ServerApiKeyGuard)
+  ingestBatch(@CurrentServer() server: Server, @Body() dto: BatchSqlEventsDto) {
+    return this.sqlEventsService.ingestBatch(server.id, dto.events ?? []);
+  }
+}

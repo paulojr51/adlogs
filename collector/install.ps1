@@ -79,10 +79,21 @@ $EnvFile = Join-Path $CollectorDir ".env"
 if (-not (Test-Path $EnvFile)) {
     Copy-Item "$CollectorDir\.env.example" $EnvFile
     Write-Host "      .env criado a partir do .env.example" -ForegroundColor Yellow
-    Write-Host "      IMPORTANTE: Edite o arquivo .env antes de iniciar o servico!" -ForegroundColor Red
-    Write-Host "      Arquivo: $EnvFile" -ForegroundColor Red
+    Write-Host "" -ForegroundColor White
+    Write-Host "  *** CONFIGURACAO OBRIGATORIA ***" -ForegroundColor Red
+    Write-Host "  Edite o arquivo .env e configure:" -ForegroundColor Red
+    Write-Host "    API_URL=https://seu-servidor-central:3001" -ForegroundColor Red
+    Write-Host "    SERVER_API_KEY=adlogs_<chave gerada no painel>" -ForegroundColor Red
+    Write-Host "  Arquivo: $EnvFile" -ForegroundColor Red
+    Write-Host "" -ForegroundColor White
 } else {
     Write-Host "      .env ja existe" -ForegroundColor Green
+    # Verificar se SERVER_API_KEY esta configurada
+    $envContent = Get-Content $EnvFile -Raw
+    if ($envContent -notmatch 'SERVER_API_KEY=adlogs_') {
+        Write-Host "  AVISO: SERVER_API_KEY nao configurada no .env!" -ForegroundColor Yellow
+        Write-Host "  Gere uma chave no painel de Servidores e adicione ao .env" -ForegroundColor Yellow
+    }
 }
 
 # Instalar e iniciar servico

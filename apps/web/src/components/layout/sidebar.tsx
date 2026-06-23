@@ -11,6 +11,10 @@ import {
   Users,
   Shield,
   ChevronRight,
+  Terminal,
+  Server,
+  UserCog,
+  Database,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -18,8 +22,12 @@ const navItems = [
   { href: '/dashboard', label: 'Painel', icon: LayoutDashboard },
   { href: '/dashboard/logins', label: 'Logins', icon: LogIn },
   { href: '/dashboard/arquivos', label: 'Arquivos', icon: FolderOpen },
+  { href: '/dashboard/processos', label: 'Processos', icon: Terminal },
+  { href: '/dashboard/contas', label: 'Contas', icon: UserCog },
+  { href: '/dashboard/sqlserver', label: 'SQL Server', icon: Database },
   { href: '/dashboard/relatorios', label: 'Relatórios', icon: FileBarChart2 },
   { href: '/dashboard/usuarios', label: 'Usuários', icon: Users },
+  { href: '/dashboard/servidores', label: 'Servidores', icon: Server },
   { href: '/dashboard/configuracoes', label: 'Configurações', icon: Settings },
 ];
 
@@ -70,7 +78,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="p-4 border-t border-slate-800">
-        <p className="text-xs text-slate-600 text-center">ADLogs v1.0</p>
+        <p className="text-xs text-slate-600 text-center">ADLogs v2.0</p>
       </div>
     </aside>
   );

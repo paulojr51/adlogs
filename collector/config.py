@@ -4,17 +4,20 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
-# Banco de dados
+# Banco de dados (usado apenas por import_evtx.py — não pelo coletor principal)
 DB_URL: str = os.environ.get('DB_URL', 'postgresql://adlogs:adlogs@localhost:5434/adlogs')
 
-# API
+# API central
 API_URL: str = os.environ.get('API_URL', 'http://localhost:3001')
+
+# Chave de API deste servidor (gerada no painel de Servidores)
+SERVER_API_KEY: str = os.environ.get('SERVER_API_KEY', '')
 
 # Polling
 POLL_INTERVAL: int = int(os.environ.get('POLL_INTERVAL', '30'))
 
 # Versão
-COLLECTOR_VERSION: str = os.environ.get('COLLECTOR_VERSION', '1.0.0')
+COLLECTOR_VERSION: str = os.environ.get('COLLECTOR_VERSION', '2.0.0')
 
 # Serviço Windows
 SERVICE_NAME: str = os.environ.get('SERVICE_NAME', 'ADLogsCollector')
@@ -23,6 +26,35 @@ SERVICE_DESCRIPTION: str = os.environ.get(
     'SERVICE_DESCRIPTION',
     'Coleta eventos de login e acesso a arquivos do Windows Event Log.'
 )
+
+# IDs de eventos de Processo
+PROCESS_EVENT_IDS = {
+    4688: 'Processo criado',
+}
+
+# IDs de eventos de Gestão de Contas
+ACCOUNT_EVENT_IDS = {
+    4720: 'Conta de usuário criada',
+    4722: 'Conta de usuário habilitada',
+    4725: 'Conta de usuário desabilitada',
+    4726: 'Conta de usuário removida',
+    4740: 'Conta de usuário bloqueada',
+    4723: 'Tentativa de alteração de senha',
+    4724: 'Senha redefinida por administrador',
+    4728: 'Membro adicionado ao grupo global',
+    4729: 'Membro removido do grupo global',
+    4732: 'Membro adicionado ao grupo local',
+    4733: 'Membro removido do grupo local',
+}
+
+# IDs de eventos do SQL Server (Application Log)
+SQL_EVENT_IDS = {
+    18456: 'Login SQL Server falhou',
+    17806: 'Falha de autenticação SSPI',
+    17852: 'Falha de autenticação',
+    7036:  'Serviço iniciado ou parado',
+}
+SQL_EVENT_SOURCE: str = 'MSSQLSERVER'
 
 # IDs de eventos de Login/Logoff
 LOGIN_EVENT_IDS = {

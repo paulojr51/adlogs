@@ -15,6 +15,9 @@ export class LoginEventsService {
     if (filter.sourceIp) {
       where.sourceIp = { contains: filter.sourceIp };
     }
+    if (filter.serverId) {
+      where.serverId = filter.serverId;
+    }
     if (filter.success !== undefined) {
       where.success = filter.success;
     }

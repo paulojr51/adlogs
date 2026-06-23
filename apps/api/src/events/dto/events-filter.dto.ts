@@ -11,6 +11,10 @@ export class LoginEventsFilterDto {
   sourceIp?: string;
 
   @IsOptional()
+  @IsString()
+  serverId?: string;
+
+  @IsOptional()
   @IsDateString()
   from?: string;
 
@@ -41,6 +45,10 @@ export class FileEventsFilterDto {
   @IsOptional()
   @IsString()
   filePath?: string;
+
+  @IsOptional()
+  @IsString()
+  serverId?: string;
 
   @IsOptional()
   @IsString()

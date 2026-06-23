@@ -12,6 +12,9 @@ export class FileEventsService {
     if (filter.username) {
       where.username = { contains: filter.username, mode: 'insensitive' };
     }
+    if (filter.serverId) {
+      where.serverId = filter.serverId;
+    }
     if (filter.filePath) {
       // Prisma/PostgreSQL ILIKE trata \ como escape — dobrar para buscar barra literal
       const safePath = filter.filePath.replace(/\\/g, '\\\\');

@@ -8,6 +8,7 @@ import { formatDate } from '@/lib/utils';
 
 interface FileEvent {
   id: string;
+  serverId: string;
   windowsEventId: number;
   username: string;
   domain?: string;
@@ -23,6 +24,11 @@ interface FileEventsResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+interface ServerRecord {
+  id: string;
+  name: string;
 }
 
 const actionColors: Record<string, string> = {
@@ -50,8 +56,14 @@ export default function ArquivosPage() {
   const [action, setAction] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [serverId, setServerId] = useState('');
+  const [servers, setServers] = useState<ServerRecord[]>([]);
   const [page, setPage] = useState(0);
   const limit = 50;
+
+  useEffect(() => {
+    api.get<ServerRecord[]>('/servers').then(setServers).catch(() => null);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +72,7 @@ export default function ArquivosPage() {
       if (username) params.set('username', username);
       if (filePath) params.set('filePath', filePath);
       if (action) params.set('action', action);
+      if (serverId) params.set('serverId', serverId);
       if (from) params.set('from', new Date(from).toISOString());
       if (to) params.set('to', new Date(to).toISOString());
       params.set('limit', String(limit));
@@ -73,7 +86,7 @@ export default function ArquivosPage() {
     } finally {
       setLoading(false);
     }
-  }, [username, filePath, action, from, to, page]);
+  }, [username, filePath, action, serverId, from, to, page]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -113,6 +126,16 @@ export default function ArquivosPage() {
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
+            <select
+              value={serverId}
+              onChange={(e) => setServerId(e.target.value)}
+              className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Todos os servidores</option>
+              {servers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
             <input
               type="datetime-local"
               value={from}
@@ -149,6 +172,7 @@ export default function ArquivosPage() {
               <thead>
                 <tr className="border-b border-slate-800">
                   <th className="px-4 py-3 text-left text-slate-500 font-medium">Ação</th>
+                  <th className="px-4 py-3 text-left text-slate-500 font-medium">Servidor</th>
                   <th className="px-4 py-3 text-left text-slate-500 font-medium">Usuário</th>
                   <th className="px-4 py-3 text-left text-slate-500 font-medium">Arquivo</th>
                   <th className="px-4 py-3 text-left text-slate-500 font-medium">Pasta Monitorada</th>
@@ -164,6 +188,9 @@ export default function ArquivosPage() {
                         {actionLabels[e.action] ?? e.action}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">
+                      {servers.find((s) => s.id === e.serverId)?.name ?? '—'}
+                    </td>
                     <td className="px-4 py-3 text-white font-medium">
                       {e.domain ? `${e.domain}\\` : ''}{e.username}
                     </td>
@@ -178,7 +205,7 @@ export default function ArquivosPage() {
                 ))}
                 {!loading && events.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                       Nenhum evento encontrado.
                     </td>
                   </tr>
