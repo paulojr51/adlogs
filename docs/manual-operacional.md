@@ -141,31 +141,19 @@ adlogs-nginx        running
 docker exec adlogs-api npx prisma migrate deploy
 ```
 
-#### Passo 5: Criar o primeiro usuário administrador
+#### Passo 5: Verificar acesso
 
-```bash
-docker exec -it adlogs-api node -e "
-const { PrismaClient, Role } = require('@prisma/client');
-const bcrypt = require('bcrypt');
-const prisma = new PrismaClient();
-async function main() {
-  const hash = await bcrypt.hash('SenhaForte123!', 10);
-  await prisma.user.create({
-    data: { name: 'Administrador', email: 'admin@cliente.com.br', passwordHash: hash, role: Role.SUPER_ADMIN }
-  });
-  console.log('Usuário criado com sucesso.');
-  await prisma.\$disconnect();
-}
-main();
-"
-```
+O sistema cria o usuário administrador padrão automaticamente na primeira inicialização:
 
-> Altere o e-mail e senha antes de executar. O usuário poderá redefinir sua senha pelo painel.
+| Campo | Valor |
+|---|---|
+| **E-mail** | `admin@adlogs.local` |
+| **Senha** | `admin123` |
+| **Perfil** | SUPER_ADMIN |
 
-#### Passo 6: Verificar acesso
+Abra o navegador em `https://adlogs.cliente.com.br` (ou o IP do servidor central) e faça login com as credenciais acima.
 
-Abra o navegador em `https://adlogs.cliente.com.br` (ou o IP do servidor central).  
-Faça login com as credenciais criadas no passo anterior.
+> **Importante:** após o primeiro login, acesse **Usuários** e altere a senha do administrador, ou crie um novo usuário SUPER_ADMIN para o cliente e desative o padrão.
 
 ---
 
