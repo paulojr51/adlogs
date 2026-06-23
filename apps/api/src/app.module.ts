@@ -12,6 +12,8 @@ import { MonitoredFoldersModule } from './monitored-folders/monitored-folders.mo
 import { CollectorModule } from './collector/collector.module';
 import { HealthModule } from './health/health.module';
 import { ReportsModule } from './reports/reports.module';
+import { ServersModule } from './servers/servers.module';
+import { ProcessEventsModule } from './process-events/process-events.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { ReportsModule } from './reports/reports.module';
     CollectorModule,
     HealthModule,
     ReportsModule,
+    ServersModule,
+    ProcessEventsModule,
   ],
   providers: [
     {

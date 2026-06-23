@@ -1,36 +1,63 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { CollectorService, CollectorHeartbeatDto } from './collector.service';
-import { Public } from '../auth/decorators/public.decorator';
+import { Role } from '@adlogs/shared';
+import type { Server } from '@adlogs/shared';
+import { CollectorService, CollectorHeartbeatDto, LoginEventInput, FileEventInput } from './collector.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Role } from '@adlogs/shared';
+import { ServerApiKeyGuard } from '../auth/guards/server-api-key.guard';
+import { CurrentServer } from '../auth/decorators/current-server.decorator';
+import { ProcessEventsService } from '../process-events/process-events.service';
+import type { ProcessEventInput } from '../process-events/process-events.service';
+
+class BatchLoginEventsDto {
+  events!: LoginEventInput[];
+}
+
+class BatchFileEventsDto {
+  events!: FileEventInput[];
+}
+
+class BatchProcessEventsDto {
+  events!: ProcessEventInput[];
+}
 
 @Controller('collector')
 export class CollectorController {
-  constructor(private readonly service: CollectorService) {}
+  constructor(
+    private readonly service: CollectorService,
+    private readonly processEvents: ProcessEventsService,
+  ) {}
 
-  /**
-   * Heartbeat do coletor Python — autenticado por API Key no header
-   * O coletor usa uma chave fixa (COLLECTOR_API_KEY) em vez de JWT
-   */
-  @Public()
   @Post('heartbeat')
-  heartbeat(@Body() data: CollectorHeartbeatDto) {
-    return this.service.heartbeat(data);
+  @UseGuards(ServerApiKeyGuard)
+  heartbeat(@CurrentServer() server: Server, @Body() data: CollectorHeartbeatDto) {
+    return this.service.heartbeat(server, data);
   }
 
-  /**
-   * Configuração que o coletor deve usar (pastas monitoradas)
-   */
-  @Public()
   @Get('config')
-  getConfig() {
-    return this.service.getConfig();
+  @UseGuards(ServerApiKeyGuard)
+  getConfig(@CurrentServer() server: Server) {
+    return this.service.getConfig(server.id);
   }
 
-  /**
-   * Status do coletor para a interface web
-   */
+  @Post('events/login')
+  @UseGuards(ServerApiKeyGuard)
+  ingestLogin(@CurrentServer() server: Server, @Body() dto: BatchLoginEventsDto) {
+    return this.service.ingestLoginEvents(server.id, dto.events ?? []);
+  }
+
+  @Post('events/file')
+  @UseGuards(ServerApiKeyGuard)
+  ingestFile(@CurrentServer() server: Server, @Body() dto: BatchFileEventsDto) {
+    return this.service.ingestFileEvents(server.id, dto.events ?? []);
+  }
+
+  @Post('events/process')
+  @UseGuards(ServerApiKeyGuard)
+  ingestProcess(@CurrentServer() server: Server, @Body() dto: BatchProcessEventsDto) {
+    return this.processEvents.ingestBatch(server.id, dto.events ?? []);
+  }
+
   @Get('status')
   @UseGuards(RolesGuard)
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ANALYST, Role.VIEWER)

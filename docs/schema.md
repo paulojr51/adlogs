@@ -7,10 +7,13 @@ users ──────── system_audit
                     │
                     └── userId → users.id
 
-login_events   (imutável — sem FK externas)
-file_events    (imutável — sem FK externas)
-monitored_folders
-collector_status
+servers ────────────────────────────────────────────────────────┐
+    │                                                            │
+    ├── login_events      (imutável — serverId obrigatório)     │
+    ├── file_events       (imutável — serverId obrigatório)     │
+    ├── process_events    (imutável — serverId obrigatório)     │
+    ├── collector_status  (um por servidor)                     │
+    └── monitored_folders (serverId NULL = global)              │
 ```
 
 ## Tabelas
@@ -29,10 +32,27 @@ collector_status
 | created_at | datetime | Criação |
 | updated_at | datetime | Última atualização |
 
+### servers
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| id | cuid | PK |
+| name | string | Nome de exibição do servidor |
+| hostname | string? | Nome do host Windows |
+| ip_address | string? | IP do servidor |
+| description | string? | Descrição livre |
+| api_key_hash | string | SHA-256 da API Key do coletor |
+| active | boolean | Servidor ativo/inativo |
+| last_seen_at | datetime? | Último heartbeat recebido |
+| created_at | datetime | Criação |
+| updated_at | datetime | Última atualização |
+
+**Nota:** A API Key é gerada no cadastro e retornada em plaintext UMA única vez. Armazena-se apenas o hash SHA-256. Use `POST /api/servers/:id/rotate-key` para regenerar.
+
 ### login_events ⚠️ IMUTÁVEL
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
 | id | cuid | PK |
+| server_id | string | FK → servers.id |
 | windows_event_id | int | ID do evento Windows (4624, 4625, 4634, 4647) |
 | username | string | Nome do usuário Windows |
 | domain | string? | Domínio |
@@ -43,16 +63,17 @@ collector_status
 | success | boolean | true = logon bem-sucedido |
 | failure_reason | string? | Motivo da falha (se success=false) |
 | timestamp | datetime | Data/hora do evento (UTC) |
-| windows_record_id | string? | Record number do Event Log (dedup) |
+| windows_record_id | string? | Record number do Event Log (dedup por server) |
 | created_at | datetime | Inserção no banco |
 
-**Índices:** username, timestamp, success, source_ip, windows_event_id
+**Índices:** server_id, username, timestamp, success, source_ip, windows_event_id
 
 ### file_events ⚠️ IMUTÁVEL
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
 | id | cuid | PK |
-| windows_event_id | int | ID do evento Windows (4663, 4660, 4670) |
+| server_id | string | FK → servers.id |
+| windows_event_id | int | ID do evento Windows (4663, 4656, 4670) |
 | username | string | Usuário que acessou |
 | domain | string? | Domínio |
 | file_path | string | Caminho completo do arquivo |
@@ -61,15 +82,40 @@ collector_status
 | process_name | string? | Nome do processo |
 | process_id | int? | PID |
 | timestamp | datetime | Data/hora do evento (UTC) |
-| windows_record_id | string? | Record number (dedup) |
+| windows_record_id | string? | Record number (dedup por server) |
 | created_at | datetime | Inserção no banco |
 
-**Índices:** username, timestamp, file_path, action, monitored_folder, windows_event_id
+**Índices:** server_id, username, timestamp, file_path, action, monitored_folder, windows_event_id
+
+### process_events ⚠️ IMUTÁVEL
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| id | cuid | PK |
+| server_id | string | FK → servers.id |
+| windows_event_id | int | 4688 (default) |
+| username | string | Usuário que iniciou o processo |
+| domain | string? | Domínio |
+| process_name | string | Nome do executável (basename do path) |
+| process_path | string? | Caminho completo do executável |
+| command_line | string? | Linha de comando completa (requer GPO) |
+| parent_process_name | string? | Nome do processo pai |
+| parent_process_id | int? | PID do processo pai |
+| process_id | int? | PID do novo processo |
+| timestamp | datetime | Data/hora do evento (UTC) |
+| windows_record_id | string? | Record number (dedup por server) |
+| created_at | datetime | Inserção no banco |
+
+**Índices:** server_id, username, timestamp, process_name
+
+**Pré-requisito para capturar command_line:**
+- `secpol.msc` → Audit Process Creation: Success habilitado
+- `gpedit.msc` → Computer Configuration → Administrative Templates → System → Audit Process Creation → Include command line: Enabled
 
 ### monitored_folders
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
 | id | cuid | PK |
+| server_id | string? | FK → servers.id (NULL = global, aplica a todos) |
 | path | string | Caminho completo da pasta (único) |
 | description | string? | Descrição |
 | active | boolean | Pasta ativa/inativa |
@@ -80,13 +126,15 @@ collector_status
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
 | id | cuid | PK |
+| server_id | string | FK → servers.id (UNIQUE — um registro por servidor) |
 | is_running | boolean | Coletor online? |
 | last_seen_at | datetime | Último heartbeat |
 | version | string? | Versão do coletor |
-| hostname | string? | Nome do servidor |
+| hostname | string? | Nome do servidor reportado pelo coletor |
 | events_today | int | Total de eventos hoje |
 | login_today | int | Login events hoje |
 | file_today | int | File events hoje |
+| process_today | int | Process events hoje |
 | updated_at | datetime | Última atualização |
 
 ### system_audit
@@ -116,8 +164,10 @@ collector_status
 
 ## Regras de Negócio
 
-1. `login_events` e `file_events` são **imutáveis** — apenas INSERT e SELECT são permitidos.
-2. Deduplicação de eventos via `windows_record_id` (único por tabela).
+1. `login_events`, `file_events` e `process_events` são **imutáveis** — apenas INSERT e SELECT são permitidos.
+2. Deduplicação de eventos via `windows_record_id` + `server_id` (par único por tabela).
 3. Todas as datas são armazenadas em UTC.
-4. `password_hash` nunca é retornado em respostas de API.
+4. `password_hash` e `api_key_hash` **nunca** são retornados em respostas de API.
 5. `SUPER_ADMIN` não pode ser desativado ou rebaixado via API.
+6. `server_id` é obrigatório em todos os eventos — dados legados migrados para `server-legacy`.
+7. `monitored_folders.server_id = NULL` significa pasta global (aplicada a todos os servidores).

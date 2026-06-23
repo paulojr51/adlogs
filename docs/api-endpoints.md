@@ -9,6 +9,11 @@ Todos os endpoints (exceto marcados com 🔓) requerem o header:
 Authorization: Bearer <access_token>
 ```
 
+Os endpoints do coletor (marcados com 🔑) requerem:
+```
+X-Server-Key: adlogs_<chave_gerada_no_painel>
+```
+
 ---
 
 ## Auth
@@ -63,6 +68,7 @@ Requer role `ADMIN` ou `SUPER_ADMIN`.
 | username | string | Filtro parcial por nome de usuário |
 | sourceIp | string | Filtro por IP de origem |
 | success | boolean | `true` = sucesso, `false` = falha |
+| serverId | string | Filtrar por servidor específico |
 | from | ISO datetime | Data/hora início |
 | to | ISO datetime | Data/hora fim |
 | limit | number | Registros por página (1-200, padrão 50) |
@@ -85,6 +91,7 @@ Requer role `ADMIN` ou `SUPER_ADMIN`.
 | filePath | string | Filtro parcial por caminho |
 | monitoredFolder | string | Filtro por pasta monitorada |
 | action | FileAction | READ, WRITE, DELETE, RENAME, PERMISSION_CHANGE |
+| serverId | string | Filtrar por servidor específico |
 | from | ISO datetime | Data/hora início |
 | to | ISO datetime | Data/hora fim |
 | limit / offset | number | Paginação |
@@ -118,13 +125,74 @@ Requer role `ADMIN` ou `SUPER_ADMIN`.
 
 ---
 
+## Servidores Monitorados
+
+| Método | Endpoint | Descrição | Role mínimo |
+|--------|----------|-----------|-------------|
+| GET | `/servers` | Lista todos os servidores | VIEWER |
+| GET | `/servers/:id` | Detalhe de um servidor | VIEWER |
+| POST | `/servers` | Cadastra servidor + gera API Key | ADMIN |
+| PATCH | `/servers/:id` | Atualiza nome/hostname/descrição | ADMIN |
+| POST | `/servers/:id/rotate-key` | Gera nova API Key | SUPER_ADMIN |
+| DELETE | `/servers/:id` | Desativa servidor | SUPER_ADMIN |
+
+### POST /servers (resposta)
+```json
+{
+  "server": { "id": "...", "name": "Servidor A", "hostname": "WIN-SRV-A", ... },
+  "apiKey": "adlogs_<hex_32_chars>"   ← retornado UMA única vez
+}
+```
+
+---
+
+## Eventos de Processo
+
+| Método | Endpoint | Descrição | Role mínimo |
+|--------|----------|-----------|-------------|
+| GET | `/events/processes` | Lista eventos de processo com filtros | VIEWER |
+
+### Query Params — GET /events/processes
+| Param | Tipo | Descrição |
+|-------|------|-----------|
+| username | string | Filtro por usuário |
+| processName | string | Filtro parcial por nome do processo |
+| serverId | string | Filtrar por servidor específico |
+| from | ISO datetime | Data/hora início |
+| to | ISO datetime | Data/hora fim |
+| limit / offset | number | Paginação |
+
+---
+
 ## Collector
 
 | Método | Endpoint | Descrição | Auth |
 |--------|----------|-----------|------|
-| POST | `/collector/heartbeat` | Heartbeat do coletor Python | 🔓 |
-| GET | `/collector/config` | Configuração para o coletor | 🔓 |
-| GET | `/collector/status` | Status do coletor | VIEWER |
+| POST | `/collector/heartbeat` | Heartbeat do coletor Python | 🔑 |
+| GET | `/collector/config` | Configuração para o coletor | 🔑 |
+| POST | `/collector/events/login` | Batch de login events | 🔑 |
+| POST | `/collector/events/file` | Batch de file events | 🔑 |
+| POST | `/collector/events/process` | Batch de process events | 🔑 |
+| GET | `/collector/status` | Status de todos os coletores | VIEWER |
+
+### POST /collector/events/login (body)
+```json
+{
+  "events": [
+    {
+      "windowsEventId": 4624,
+      "username": "joao",
+      "domain": "EMPRESA",
+      "sourceIp": "192.168.1.100",
+      "logonType": 10,
+      "logonTypeName": "RemoteInteractive",
+      "success": true,
+      "timestamp": "2026-06-23T10:00:00.000Z",
+      "windowsRecordId": "12345"
+    }
+  ]
+}
+```
 
 ---
 

@@ -6,5 +6,7 @@ export type {
   MonitoredFolder,
   CollectorStatus,
   SystemAudit,
+  Server,
+  ProcessEvent,
   Prisma,
 } from '../client/index.js';

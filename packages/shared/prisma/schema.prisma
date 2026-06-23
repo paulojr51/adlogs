@@ -50,12 +50,41 @@ model User {
 }
 
 // ============================================================
+// Servidores monitorados
+// Cada servidor tem uma API Key única usada pelo coletor
+// ============================================================
+
+model Server {
+  id          String    @id @default(cuid())
+  name        String
+  hostname    String?
+  ipAddress   String?   @map("ip_address")
+  description String?
+  apiKeyHash  String    @map("api_key_hash")
+  active      Boolean   @default(true)
+  lastSeenAt  DateTime? @map("last_seen_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  loginEvents      LoginEvent[]
+  fileEvents       FileEvent[]
+  processEvents    ProcessEvent[]
+  collectorStatus  CollectorStatus?
+  monitoredFolders MonitoredFolder[]
+
+  @@index([apiKeyHash])
+  @@map("servers")
+}
+
+// ============================================================
 // Eventos de Login/Logoff do Windows
 // Event IDs: 4624 (logon), 4625 (falha logon), 4634 (logoff), 4647 (logoff iniciado pelo usuário)
 // ============================================================
 
 model LoginEvent {
   id              String   @id @default(cuid())
+  serverId        String   @map("server_id")
+  server          Server   @relation(fields: [serverId], references: [id])
   windowsEventId  Int      @map("windows_event_id")
   username        String
   domain          String?
@@ -69,6 +98,7 @@ model LoginEvent {
   windowsRecordId String?  @map("windows_record_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
+  @@index([serverId])
   @@index([username])
   @@index([timestamp])
   @@index([success])
@@ -79,12 +109,14 @@ model LoginEvent {
 
 // ============================================================
 // Eventos de Acesso a Arquivos do Windows
-// Event IDs: 4663 (acesso), 4660 (exclusão), 4670 (alteração de permissão)
+// Event IDs: 4663 (acesso), 4656 (handle solicitado), 4670 (alteração de permissão)
 // Requer: Auditoria de Acesso a Objetos habilitada + SACLs nas pastas
 // ============================================================
 
 model FileEvent {
   id              String     @id @default(cuid())
+  serverId        String     @map("server_id")
+  server          Server     @relation(fields: [serverId], references: [id])
   windowsEventId  Int        @map("windows_event_id")
   username        String
   domain          String?
@@ -97,6 +129,7 @@ model FileEvent {
   windowsRecordId String?    @map("windows_record_id")
   createdAt       DateTime   @default(now()) @map("created_at")
 
+  @@index([serverId])
   @@index([username])
   @@index([timestamp])
   @@index([filePath])
@@ -107,34 +140,71 @@ model FileEvent {
 }
 
 // ============================================================
+// Eventos de Criação de Processo do Windows
+// Event ID: 4688 — Requer: Audit Process Creation habilitado
+// Requer (para command line): Include command line in process creation events (GPO)
+// ============================================================
+
+model ProcessEvent {
+  id                String   @id @default(cuid())
+  serverId          String   @map("server_id")
+  server            Server   @relation(fields: [serverId], references: [id])
+  windowsEventId    Int      @default(4688) @map("windows_event_id")
+  username          String
+  domain            String?
+  processName       String   @map("process_name")
+  processPath       String?  @map("process_path")
+  commandLine       String?  @map("command_line")
+  parentProcessName String?  @map("parent_process_name")
+  parentProcessId   Int?     @map("parent_process_id")
+  processId         Int?     @map("process_id")
+  timestamp         DateTime
+  windowsRecordId   String?  @map("windows_record_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([serverId])
+  @@index([username])
+  @@index([timestamp])
+  @@index([processName])
+  @@map("process_events")
+}
+
+// ============================================================
 // Pastas Monitoradas (configuração do coletor)
+// serverId NULL = global (todos os servidores)
 // ============================================================
 
 model MonitoredFolder {
   id          String   @id @default(cuid())
+  serverId    String?  @map("server_id")
+  server      Server?  @relation(fields: [serverId], references: [id])
   path        String   @unique
   description String?
   active      Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  @@index([serverId])
   @@map("monitored_folders")
 }
 
 // ============================================================
-// Status do Coletor Windows Service
+// Status do Coletor Windows Service (um por servidor)
 // ============================================================
 
 model CollectorStatus {
-  id            String   @id @default(cuid())
-  isRunning     Boolean  @map("is_running")
-  lastSeenAt    DateTime @map("last_seen_at")
-  version       String?
-  hostname      String?
-  eventsToday   Int      @default(0) @map("events_today")
-  loginToday    Int      @default(0) @map("login_today")
-  fileToday     Int      @default(0) @map("file_today")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(cuid())
+  serverId    String   @unique @map("server_id")
+  server      Server   @relation(fields: [serverId], references: [id])
+  isRunning   Boolean  @map("is_running")
+  lastSeenAt  DateTime @map("last_seen_at")
+  version     String?
+  hostname    String?
+  eventsToday Int      @default(0) @map("events_today")
+  loginToday  Int      @default(0) @map("login_today")
+  fileToday   Int      @default(0) @map("file_today")
+  processToday Int     @default(0) @map("process_today")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("collector_status")
 }
