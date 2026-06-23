@@ -319,28 +319,32 @@ Se o novo servidor vai monitorar arquivos, logins ou processos, aplicar as confi
 
 ### 4.1 — Atualizar o servidor central (API + Frontend)
 
+> **Os dados nunca são perdidos em atualizações normais.** Os eventos ficam no volume Docker `adlogs-postgres-data`, que persiste independente dos containers. As migrations só adicionam tabelas/colunas novas — nunca fazem DROP ou DELETE. O único comando que apagaria dados seria `docker compose down -v`, que **jamais deve ser usado em produção**.
+
 Execute no servidor central:
 
 ```bash
 cd /opt/adlogs
 
-# 1. Baixar a versão mais recente
+# 1. Backup preventivo (recomendado antes de qualquer atualização)
+docker exec adlogs-postgres pg_dump -U adlogs adlogs > backup_pre_update_$(date +%Y%m%d).sql
+
+# 2. Baixar a versão mais recente
 git pull origin main
 
-# 2. Rebuild e restart dos containers (sem derrubar o banco)
+# 3. Rebuild e restart dos containers (sem derrubar o banco)
+#    NUNCA use "docker compose down -v" — o -v apaga os volumes e os dados
 docker compose -f docker-compose.production.yml up -d --build api web
 
-# 3. Aplicar migrations novas (se houver)
+# 4. Aplicar migrations novas (se houver — operação segura e idempotente)
 docker exec adlogs-api npx prisma migrate deploy
 
-# 4. Verificar status
+# 5. Verificar status
 docker compose -f docker-compose.production.yml ps
 docker logs adlogs-api --tail 30
 ```
 
-> O PostgreSQL e seus dados **não são afetados** pelo rebuild dos containers `api` e `web`. O volume `adlogs-postgres-data` persiste os dados.
-
-> **Tempo de indisponibilidade estimado:** 30-60 segundos durante o restart. Os coletores continuam rodando — os eventos acumulados serão enviados assim que a API voltar.
+> **Tempo de indisponibilidade estimado:** 30-60 segundos durante o restart. Os coletores continuam rodando nos servidores Windows — os eventos acumulados serão enviados assim que a API voltar.
 
 ### 4.2 — Atualizar o coletor nos servidores Windows
 
