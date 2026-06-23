@@ -59,3 +59,11 @@ def submit_file_events(events: list[dict[str, Any]], api_url: str, api_key: str)
 
 def submit_process_events(events: list[dict[str, Any]], api_url: str, api_key: str) -> int:
     return _post_batch('events/process', events, api_url, api_key)
+
+
+def submit_account_events(events: list[dict[str, Any]], api_url: str, api_key: str) -> int:
+    return _post_batch('events/account', events, api_url, api_key)
+
+
+def submit_sql_events(events: list[dict[str, Any]], api_url: str, api_key: str) -> int:
+    return _post_batch('events/sql', events, api_url, api_key)

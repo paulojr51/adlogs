@@ -14,6 +14,9 @@ import { HealthModule } from './health/health.module';
 import { ReportsModule } from './reports/reports.module';
 import { ServersModule } from './servers/servers.module';
 import { ProcessEventsModule } from './process-events/process-events.module';
+import { ServerConfigModule } from './server-config/server-config.module';
+import { AccountEventsModule } from './account-events/account-events.module';
+import { SqlEventsModule } from './sql-events/sql-events.module';
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { ProcessEventsModule } from './process-events/process-events.module';
     ReportsModule,
     ServersModule,
     ProcessEventsModule,
+    ServerConfigModule,
+    AccountEventsModule,
+    SqlEventsModule,
   ],
   providers: [
     {

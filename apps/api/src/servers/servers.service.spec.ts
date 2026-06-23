@@ -18,9 +18,18 @@ const mockServer = {
 
 describe('ServersService', () => {
   let service: ServersService;
-  let prisma: { server: Record<string, jest.Mock> };
+  let prisma: {
+    server: Record<string, jest.Mock>;
+    serverConfig: Record<string, jest.Mock>;
+    $transaction: jest.Mock;
+  };
+  let txServer: Record<string, jest.Mock>;
+  let txServerConfig: Record<string, jest.Mock>;
 
   beforeEach(async () => {
+    txServer = { create: jest.fn() };
+    txServerConfig = { create: jest.fn() };
+
     const serverMock = {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -29,10 +38,21 @@ describe('ServersService', () => {
       update: jest.fn(),
     };
 
+    const serverConfigMock = { create: jest.fn() };
+
+    const prismaMock = {
+      server: serverMock,
+      serverConfig: serverConfigMock,
+      $transaction: jest.fn().mockImplementation(
+        async (fn: (tx: { server: typeof txServer; serverConfig: typeof txServerConfig }) => Promise<unknown>) =>
+          fn({ server: txServer, serverConfig: txServerConfig }),
+      ),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         ServersService,
-        { provide: PrismaService, useValue: { server: serverMock } },
+        { provide: PrismaService, useValue: prismaMock },
       ],
     }).compile();
 
@@ -65,16 +85,23 @@ describe('ServersService', () => {
   describe('create', () => {
     it('deve criar servidor e retornar apiKey plaintext uma vez', async () => {
       prisma.server.findFirst.mockResolvedValue(null);
-      prisma.server.create.mockResolvedValue({ ...mockServer, id: 'srv_new' });
+      txServer.create.mockResolvedValue({ ...mockServer, id: 'srv_new' });
+      txServerConfig.create.mockResolvedValue({});
 
       const result = await service.create({ name: 'Servidor A', hostname: 'WIN-A' });
 
       expect(result.apiKey).toBeDefined();
       expect(result.apiKey).toMatch(/^adlogs_/);
       expect(result.server.id).toBe('srv_new');
-      expect(prisma.server.create).toHaveBeenCalledWith(
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(txServer.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ name: 'Servidor A' }),
+        }),
+      );
+      expect(txServerConfig.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ serverId: 'srv_new', collectLogins: true }),
         }),
       );
     });

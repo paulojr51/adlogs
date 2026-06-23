@@ -26,6 +26,8 @@ interface CollectorStatus {
   loginToday?: number;
   fileToday?: number;
   processToday?: number;
+  accountToday?: number;
+  sqlToday?: number;
 }
 
 export default function ConfiguracoesPage() {
@@ -114,7 +116,7 @@ export default function ConfiguracoesPage() {
                       {s.isRunning ? 'Online' : 'Offline'}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
                     <div>
                       <p className="text-slate-500 mb-0.5">Versão</p>
                       <p className="text-white">{s.version ?? '—'}</p>
@@ -134,6 +136,10 @@ export default function ConfiguracoesPage() {
                     <div>
                       <p className="text-slate-500 mb-0.5">Processos hoje</p>
                       <p className="text-white">{(s.processToday ?? 0).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 mb-0.5">Contas / SQL hoje</p>
+                      <p className="text-white">{(s.accountToday ?? 0).toLocaleString('pt-BR')} / {(s.sqlToday ?? 0).toLocaleString('pt-BR')}</p>
                     </div>
                   </div>
                 </div>

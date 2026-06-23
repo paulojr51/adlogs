@@ -28,6 +28,25 @@ enum FileAction {
   PERMISSION_CHANGE
 }
 
+enum AccountEventType {
+  USER_CREATED
+  USER_ENABLED
+  USER_DISABLED
+  USER_DELETED
+  USER_LOCKED
+  PASSWORD_CHANGED
+  PASSWORD_RESET
+  GROUP_MEMBER_ADDED
+  GROUP_MEMBER_REMOVED
+}
+
+enum SqlEventType {
+  LOGIN_FAILED
+  AUTH_FAILURE
+  SERVICE_STARTED
+  SERVICE_STOPPED
+}
+
 // ============================================================
 // Users do sistema (interface web)
 // ============================================================
@@ -69,16 +88,41 @@ model Server {
   loginEvents      LoginEvent[]
   fileEvents       FileEvent[]
   processEvents    ProcessEvent[]
+  accountEvents    AccountEvent[]
+  sqlEvents        SqlEvent[]
   collectorStatus  CollectorStatus?
   monitoredFolders MonitoredFolder[]
+  config           ServerConfig?
 
   @@index([apiKeyHash])
   @@map("servers")
 }
 
 // ============================================================
+// Configuração de coleta por servidor
+// 1:1 com Server — criado automaticamente ao cadastrar servidor
+// ============================================================
+
+model ServerConfig {
+  id                    String  @id @default(cuid())
+  serverId              String  @unique @map("server_id")
+  server                Server  @relation(fields: [serverId], references: [id])
+
+  collectLogins         Boolean @default(true)  @map("collect_logins")
+  collectFiles          Boolean @default(true)  @map("collect_files")
+  collectProcesses      Boolean @default(false) @map("collect_processes")
+  collectAccountChanges Boolean @default(false) @map("collect_account_changes")
+  collectSqlServer      Boolean @default(false) @map("collect_sql_server")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("server_config")
+}
+
+// ============================================================
 // Eventos de Login/Logoff do Windows
-// Event IDs: 4624 (logon), 4625 (falha logon), 4634 (logoff), 4647 (logoff iniciado pelo usuário)
+// Event IDs: 4624, 4625, 4634, 4647, 4648
 // ============================================================
 
 model LoginEvent {
@@ -109,8 +153,7 @@ model LoginEvent {
 
 // ============================================================
 // Eventos de Acesso a Arquivos do Windows
-// Event IDs: 4663 (acesso), 4656 (handle solicitado), 4670 (alteração de permissão)
-// Requer: Auditoria de Acesso a Objetos habilitada + SACLs nas pastas
+// Event IDs: 4663, 4656, 4670
 // ============================================================
 
 model FileEvent {
@@ -141,8 +184,7 @@ model FileEvent {
 
 // ============================================================
 // Eventos de Criação de Processo do Windows
-// Event ID: 4688 — Requer: Audit Process Creation habilitado
-// Requer (para command line): Include command line in process creation events (GPO)
+// Event ID: 4688 — Requer: Audit Process Creation + GPO command line
 // ============================================================
 
 model ProcessEvent {
@@ -170,6 +212,61 @@ model ProcessEvent {
 }
 
 // ============================================================
+// Eventos de Gestão de Contas do Windows
+// Event IDs: 4720, 4722, 4725, 4726, 4740, 4723, 4724, 4728, 4729, 4732, 4733
+// ============================================================
+
+model AccountEvent {
+  id              String           @id @default(cuid())
+  serverId        String           @map("server_id")
+  server          Server           @relation(fields: [serverId], references: [id])
+  windowsEventId  Int              @map("windows_event_id")
+  eventType       AccountEventType @map("event_type")
+  targetUsername  String           @map("target_username")
+  targetDomain    String?          @map("target_domain")
+  actorUsername   String?          @map("actor_username")
+  actorDomain     String?          @map("actor_domain")
+  groupName       String?          @map("group_name")
+  detail          String?
+  timestamp       DateTime
+  windowsRecordId String?          @map("windows_record_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  @@index([serverId])
+  @@index([targetUsername])
+  @@index([timestamp])
+  @@index([eventType])
+  @@map("account_events")
+}
+
+// ============================================================
+// Eventos do SQL Server (lidos do Windows Application Log)
+// Event IDs: 18456 (login fail), 17806/17852 (auth fail), 7036 (service start/stop)
+// Source: MSSQLSERVER — requer SQL Server Audit habilitado
+// ============================================================
+
+model SqlEvent {
+  id              String       @id @default(cuid())
+  serverId        String       @map("server_id")
+  server          Server       @relation(fields: [serverId], references: [id])
+  windowsEventId  Int          @map("windows_event_id")
+  eventType       SqlEventType @map("event_type")
+  username        String?
+  clientIp        String?      @map("client_ip")
+  database        String?
+  detail          String?
+  success         Boolean      @default(false)
+  timestamp       DateTime
+  windowsRecordId String?      @map("windows_record_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  @@index([serverId])
+  @@index([timestamp])
+  @@index([eventType])
+  @@map("sql_events")
+}
+
+// ============================================================
 // Pastas Monitoradas (configuração do coletor)
 // serverId NULL = global (todos os servidores)
 // ============================================================
@@ -193,18 +290,20 @@ model MonitoredFolder {
 // ============================================================
 
 model CollectorStatus {
-  id          String   @id @default(cuid())
-  serverId    String   @unique @map("server_id")
-  server      Server   @relation(fields: [serverId], references: [id])
-  isRunning   Boolean  @map("is_running")
-  lastSeenAt  DateTime @map("last_seen_at")
-  version     String?
-  hostname    String?
-  eventsToday Int      @default(0) @map("events_today")
-  loginToday  Int      @default(0) @map("login_today")
-  fileToday   Int      @default(0) @map("file_today")
-  processToday Int     @default(0) @map("process_today")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(cuid())
+  serverId     String   @unique @map("server_id")
+  server       Server   @relation(fields: [serverId], references: [id])
+  isRunning    Boolean  @map("is_running")
+  lastSeenAt   DateTime @map("last_seen_at")
+  version      String?
+  hostname     String?
+  eventsToday  Int      @default(0) @map("events_today")
+  loginToday   Int      @default(0) @map("login_today")
+  fileToday    Int      @default(0) @map("file_today")
+  processToday Int      @default(0) @map("process_today")
+  accountToday Int      @default(0) @map("account_today")
+  sqlToday     Int      @default(0) @map("sql_today")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("collector_status")
 }

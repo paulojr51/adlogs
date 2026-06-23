@@ -41,15 +41,28 @@ export class ServersService {
 
     const { rawKey, keyHash } = this._generateKey();
 
-    const server = await this.prisma.server.create({
-      data: {
-        name: dto.name,
-        hostname: dto.hostname,
-        ipAddress: dto.ipAddress,
-        description: dto.description,
-        apiKeyHash: keyHash,
-      },
-      select: SAFE_SELECT,
+    const server = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.server.create({
+        data: {
+          name: dto.name,
+          hostname: dto.hostname,
+          ipAddress: dto.ipAddress,
+          description: dto.description,
+          apiKeyHash: keyHash,
+        },
+        select: SAFE_SELECT,
+      });
+      await tx.serverConfig.create({
+        data: {
+          serverId: created.id,
+          collectLogins: true,
+          collectFiles: true,
+          collectProcesses: false,
+          collectAccountChanges: false,
+          collectSqlServer: false,
+        },
+      });
+      return created;
     });
 
     return { server, apiKey: rawKey };

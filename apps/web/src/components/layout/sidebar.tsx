@@ -13,6 +13,8 @@ import {
   ChevronRight,
   Terminal,
   Server,
+  UserCog,
+  Database,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +23,8 @@ const navItems = [
   { href: '/dashboard/logins', label: 'Logins', icon: LogIn },
   { href: '/dashboard/arquivos', label: 'Arquivos', icon: FolderOpen },
   { href: '/dashboard/processos', label: 'Processos', icon: Terminal },
+  { href: '/dashboard/contas', label: 'Contas', icon: UserCog },
+  { href: '/dashboard/sqlserver', label: 'SQL Server', icon: Database },
   { href: '/dashboard/relatorios', label: 'Relatórios', icon: FileBarChart2 },
   { href: '/dashboard/usuarios', label: 'Usuários', icon: Users },
   { href: '/dashboard/servidores', label: 'Servidores', icon: Server },

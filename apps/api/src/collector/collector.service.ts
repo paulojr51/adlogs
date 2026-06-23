@@ -21,6 +21,12 @@ export class CollectorHeartbeatDto {
 
   @IsNumber()
   processToday!: number;
+
+  @IsNumber()
+  accountToday!: number;
+
+  @IsNumber()
+  sqlToday!: number;
 }
 
 export interface LoginEventInput {
@@ -66,6 +72,8 @@ export class CollectorService {
         loginToday: data.loginToday,
         fileToday: data.fileToday,
         processToday: data.processToday,
+        accountToday: data.accountToday,
+        sqlToday: data.sqlToday,
       },
       create: {
         serverId: server.id,
@@ -77,6 +85,8 @@ export class CollectorService {
         loginToday: data.loginToday,
         fileToday: data.fileToday,
         processToday: data.processToday,
+        accountToday: data.accountToday,
+        sqlToday: data.sqlToday,
       },
     });
   }
@@ -96,15 +106,22 @@ export class CollectorService {
   }
 
   async getConfig(serverId: string) {
-    const folders = await this.prisma.monitoredFolder.findMany({
-      where: {
-        active: true,
-        OR: [{ serverId }, { serverId: null }],
-      },
-      select: { path: true },
-    });
+    const [folders, config] = await Promise.all([
+      this.prisma.monitoredFolder.findMany({
+        where: { active: true, OR: [{ serverId }, { serverId: null }] },
+        select: { path: true },
+      }),
+      this.prisma.serverConfig.findUnique({ where: { serverId } }),
+    ]);
 
-    return { monitoredFolders: folders.map((f) => f.path) };
+    return {
+      monitoredFolders: folders.map((f) => f.path),
+      collectLogins:         config?.collectLogins         ?? true,
+      collectFiles:          config?.collectFiles          ?? true,
+      collectProcesses:      config?.collectProcesses      ?? false,
+      collectAccountChanges: config?.collectAccountChanges ?? false,
+      collectSqlServer:      config?.collectSqlServer      ?? false,
+    };
   }
 
   async ingestLoginEvents(serverId: string, events: LoginEventInput[]) {

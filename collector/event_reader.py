@@ -5,6 +5,8 @@ Processa:
   - Login/Logoff: Event IDs 4624, 4625, 4634, 4647, 4648
   - Acesso a arquivos: Event IDs 4663, 4656, 4670
   - Criação de processos: Event ID 4688
+  - Gestão de contas: Event IDs 4720, 4722, 4725, 4726, 4740, 4723, 4724, 4728-4733
+  - SQL Server (Application Log): Event IDs 18456, 17806, 17852, 7036
 
 Pré-requisito para eventos de arquivo:
   1. Política de auditoria: Acesso a Objetos deve estar habilitada
@@ -34,6 +36,7 @@ import winerror  # type: ignore[import]
 
 from config import (
     LOGIN_EVENT_IDS, FILE_EVENT_IDS, PROCESS_EVENT_IDS,
+    ACCOUNT_EVENT_IDS, SQL_EVENT_IDS, SQL_EVENT_SOURCE,
     LOGON_TYPES, ACCESS_MASK_TO_ACTION, WINDOWS_MSG_TO_ACTION,
 )
 
@@ -418,6 +421,178 @@ class EventReader:
 
         except Exception as exc:
             logger.debug('Error parsing process event %s: %s', getattr(record, 'RecordNumber', '?'), exc)
+            return None
+
+
+    def read_account_events(self, last_record_id: int | None = None) -> list[dict[str, Any]]:
+        """Lê eventos de gestão de contas (4720-4733) do Security Log."""
+        events = []
+        try:
+            handle = win32evtlog.OpenEventLog(None, 'Security')
+            flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+            records_processed = 0
+
+            while records_processed < 2000:
+                batch = win32evtlog.ReadEventLog(handle, flags, 0)
+                if not batch:
+                    break
+                for record in batch:
+                    if (record.EventID & 0xFFFF) not in ACCOUNT_EVENT_IDS:
+                        continue
+                    record_number = record.RecordNumber
+                    if last_record_id is not None and record_number <= last_record_id:
+                        win32evtlog.CloseEventLog(handle)
+                        return events
+                    parsed = self._parse_account_event(record)
+                    if parsed:
+                        events.append(parsed)
+                    records_processed += 1
+
+            win32evtlog.CloseEventLog(handle)
+        except Exception as exc:
+            logger.error('Error reading account events: %s', exc)
+        return events
+
+    def _parse_account_event(self, record: Any) -> dict[str, Any] | None:
+        """Extrai campos de evento de gestão de conta.
+
+        Índices dos StringInserts para eventos de conta:
+          [0] TargetUserName   = targetUsername
+          [1] TargetDomainName = targetDomain
+          [2] groupName        (para eventos de grupo 4728/4729/4732/4733)
+          [4] SubjectUserName  = actorUsername
+          [5] SubjectDomainName = actorDomain
+        """
+        try:
+            event_id = record.EventID & 0xFFFF
+            strings = record.StringInserts or []
+
+            target_username = strings[0] if len(strings) > 0 else ''
+            target_domain = strings[1] if len(strings) > 1 else ''
+            group_name = strings[2] if len(strings) > 2 else None
+            actor_username = strings[4] if len(strings) > 4 else None
+            actor_domain = strings[5] if len(strings) > 5 else None
+
+            if not target_username or target_username.endswith('$') or target_username == '-':
+                return None
+
+            event_type_map = {
+                4720: 'USER_CREATED',
+                4722: 'USER_ENABLED',
+                4725: 'USER_DISABLED',
+                4726: 'USER_DELETED',
+                4740: 'USER_LOCKED',
+                4723: 'PASSWORD_CHANGED',
+                4724: 'PASSWORD_RESET',
+                4728: 'GROUP_MEMBER_ADDED',
+                4729: 'GROUP_MEMBER_REMOVED',
+                4732: 'GROUP_MEMBER_ADDED',
+                4733: 'GROUP_MEMBER_REMOVED',
+            }
+            event_type = event_type_map.get(event_id)
+            if not event_type:
+                return None
+
+            timestamp = record.TimeGenerated
+            if hasattr(timestamp, 'timestamp'):
+                ts = datetime.fromtimestamp(timestamp.timestamp(), tz=timezone.utc)
+            else:
+                ts = datetime.now(timezone.utc)
+
+            return {
+                'windows_event_id': event_id,
+                'event_type': event_type,
+                'target_username': target_username.strip(),
+                'target_domain': target_domain.strip() or None,
+                'actor_username': actor_username.strip() if actor_username else None,
+                'actor_domain': actor_domain.strip() if actor_domain else None,
+                'group_name': group_name.strip() if group_name else None,
+                'timestamp': ts,
+                'windows_record_id': str(record.RecordNumber),
+            }
+
+        except Exception as exc:
+            logger.debug('Error parsing account event %s: %s', getattr(record, 'RecordNumber', '?'), exc)
+            return None
+
+    def read_sql_events(self, last_record_id: int | None = None) -> list[dict[str, Any]]:
+        """Lê eventos SQL Server do Windows Application Log."""
+        events = []
+        try:
+            handle = win32evtlog.OpenEventLog(None, 'Application')
+            flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+            records_processed = 0
+
+            while records_processed < 2000:
+                batch = win32evtlog.ReadEventLog(handle, flags, 0)
+                if not batch:
+                    break
+                for record in batch:
+                    source = getattr(record, 'SourceName', '') or ''
+                    if source.upper() != SQL_EVENT_SOURCE.upper():
+                        continue
+                    if (record.EventID & 0xFFFF) not in SQL_EVENT_IDS:
+                        continue
+                    record_number = record.RecordNumber
+                    if last_record_id is not None and record_number <= last_record_id:
+                        win32evtlog.CloseEventLog(handle)
+                        return events
+                    parsed = self._parse_sql_event(record)
+                    if parsed:
+                        events.append(parsed)
+                    records_processed += 1
+
+            win32evtlog.CloseEventLog(handle)
+        except Exception as exc:
+            logger.error('Error reading SQL events: %s', exc)
+        return events
+
+    def _parse_sql_event(self, record: Any) -> dict[str, Any] | None:
+        """Extrai campos de evento SQL Server do Application Log."""
+        try:
+            event_id = record.EventID & 0xFFFF
+            strings = record.StringInserts or []
+
+            username = strings[0].strip() if len(strings) > 0 and strings[0] else None
+            detail = strings[1].strip() if len(strings) > 1 and strings[1] else None
+
+            if event_id == 18456:
+                event_type = 'LOGIN_FAILED'
+                success = False
+            elif event_id in (17806, 17852):
+                event_type = 'AUTH_FAILURE'
+                success = False
+                username = None
+            elif event_id == 7036:
+                state = (detail or '').lower()
+                if 'running' in state or 'started' in state or 'iniciado' in state:
+                    event_type = 'SERVICE_STARTED'
+                    success = True
+                else:
+                    event_type = 'SERVICE_STOPPED'
+                    success = False
+                username = None
+            else:
+                return None
+
+            timestamp = record.TimeGenerated
+            if hasattr(timestamp, 'timestamp'):
+                ts = datetime.fromtimestamp(timestamp.timestamp(), tz=timezone.utc)
+            else:
+                ts = datetime.now(timezone.utc)
+
+            return {
+                'windows_event_id': event_id,
+                'event_type': event_type,
+                'username': username or None,
+                'detail': detail,
+                'success': success,
+                'timestamp': ts,
+                'windows_record_id': str(record.RecordNumber),
+            }
+
+        except Exception as exc:
+            logger.debug('Error parsing SQL event %s: %s', getattr(record, 'RecordNumber', '?'), exc)
             return None
 
 
