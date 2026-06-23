@@ -47,6 +47,18 @@ enum SqlEventType {
   SERVICE_STOPPED
 }
 
+enum AlertCategory {
+  LOGIN
+  FILE
+  ACCOUNT
+  SQL
+}
+
+enum AlertCondition {
+  ANY
+  THRESHOLD
+}
+
 // ============================================================
 // Users do sistema (interface web)
 // ============================================================
@@ -93,6 +105,8 @@ model Server {
   collectorStatus  CollectorStatus?
   monitoredFolders MonitoredFolder[]
   config           ServerConfig?
+  alertRules       AlertRule[]
+  triggeredAlerts  Alert[]
 
   @@index([apiKeyHash])
   @@map("servers")
@@ -306,6 +320,53 @@ model CollectorStatus {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("collector_status")
+}
+
+// ============================================================
+// Regras de Alerta — definem condições que disparam notificações
+// ============================================================
+
+model AlertRule {
+  id            String         @id @default(cuid())
+  name          String
+  description   String?
+  enabled       Boolean        @default(true)
+  serverId      String?        @map("server_id")
+  server        Server?        @relation(fields: [serverId], references: [id])
+  category      AlertCategory
+  eventTypes    String[]       @map("event_types")
+  condition     AlertCondition @default(ANY)
+  threshold     Int?
+  windowMinutes Int            @default(5) @map("window_minutes")
+  emailTo       String[]       @map("email_to")
+  webhookUrl    String?        @map("webhook_url")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  alerts        Alert[]
+
+  @@map("alert_rules")
+}
+
+// ============================================================
+// Histórico de alertas disparados
+// ============================================================
+
+model Alert {
+  id          String    @id @default(cuid())
+  ruleId      String    @map("rule_id")
+  rule        AlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  serverId    String    @map("server_id")
+  server      Server    @relation(fields: [serverId], references: [id])
+  triggeredAt DateTime  @default(now()) @map("triggered_at")
+  detail      String?
+  eventCount  Int       @default(1) @map("event_count")
+  notified    Boolean   @default(false)
+
+  @@index([ruleId])
+  @@index([serverId])
+  @@index([triggeredAt])
+  @@map("alerts")
 }
 
 // ============================================================
