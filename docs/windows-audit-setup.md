@@ -94,7 +94,55 @@ Write-Host "SACL configurada em: $FolderPath"
 
 ---
 
-## 3. Verificação
+## 3. Rastreamento de Processos (Event ID 4688 — Opcional)
+
+O Event ID 4688 (Process Creation) permite rastrear quais programas e comandos foram executados por cada usuário.
+
+### Passo 1: Habilitar Audit Process Creation
+
+```powershell
+# Via linha de comando
+auditpol /set /subcategory:"Process Creation" /success:enable
+```
+
+Ou via Group Policy:
+1. Abrir `secpol.msc`
+2. Navegar: `Security Settings > Advanced Audit Policy Configuration > Detailed Tracking`
+3. Habilitar **Audit Process Creation** (Success)
+
+### Passo 2: Incluir linha de comando no evento (recomendado)
+
+Sem este passo, o `commandLine` chegará vazio. Habilitar via GPO:
+
+1. Abrir `gpedit.msc`
+2. Navegar: `Computer Configuration > Administrative Templates > System > Audit Process Creation`
+3. Habilitar **Include command line in process creation events**
+
+```powershell
+# Verificar se está habilitado
+Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit" -Name ProcessCreationIncludeCmdLine_Enabled
+# Resultado esperado: ProcessCreationIncludeCmdLine_Enabled = 1
+```
+
+### Passo 3: Forçar atualização de política
+
+```powershell
+gpupdate /force
+```
+
+### Volume estimado
+
+| Cenário | Volume/hora | Volume/dia |
+|---------|-------------|------------|
+| Servidor de arquivos leve | 50-200 eventos | 1.200-5.000 |
+| Servidor de aplicação | 500-5.000 eventos | 12k-120k |
+| Terminal Server (RDS) | 2.000-20.000 eventos | 50k-480k |
+
+> **Atenção:** Em servidores com alto volume de processos, considere filtrar por usuário (o coletor já ignora contas de sistema terminadas em `$`). O ADLogs registra apenas processos de usuários humanos.
+
+---
+
+## 4. Verificação
 
 Após configurar, aguarde o próximo ciclo do coletor (padrão: 30 segundos) e verifique:
 
@@ -102,13 +150,17 @@ Após configurar, aguarde o próximo ciclo do coletor (padrão: 30 segundos) e v
 # Ver eventos de arquivo no Event Viewer
 Get-WinEvent -LogName Security -FilterHashtable @{Id=4663} -MaxEvents 10 |
     Select-Object TimeCreated, Message | Format-List
+
+# Ver eventos de processo (se 4688 habilitado)
+Get-WinEvent -LogName Security -FilterHashtable @{Id=4688} -MaxEvents 10 |
+    Select-Object TimeCreated, Message | Format-List
 ```
 
-No ADLogs, acesse **Acessos a Arquivos** e confirme que os eventos aparecem.
+No ADLogs, acesse **Acessos a Arquivos** e **Processos** para confirmar que os eventos aparecem.
 
 ---
 
-## 4. Ambiente de Domínio (AD)
+## 5. Ambiente de Domínio (AD)
 
 ### Logins de Rede vs. Logins Locais
 
@@ -131,7 +183,7 @@ Para aplicar as configurações em todos os servidores via GPO:
 
 ---
 
-## 5. Dimensionamento de Volume
+## 6. Dimensionamento de Volume
 
 Volumes estimados por servidor (médio porte, ~50 usuários):
 
@@ -145,7 +197,7 @@ Volumes estimados por servidor (médio porte, ~50 usuários):
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 ### Eventos de arquivo não aparecem
 

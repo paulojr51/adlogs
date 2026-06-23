@@ -16,6 +16,8 @@ interface MonitoredFolder {
 }
 
 interface CollectorStatus {
+  id: string;
+  serverId: string;
   isRunning: boolean;
   lastSeenAt?: string | null;
   version?: string;
@@ -23,11 +25,12 @@ interface CollectorStatus {
   eventsToday?: number;
   loginToday?: number;
   fileToday?: number;
+  processToday?: number;
 }
 
 export default function ConfiguracoesPage() {
   const [folders, setFolders] = useState<MonitoredFolder[]>([]);
-  const [collectorStatus, setCollectorStatus] = useState<CollectorStatus | null>(null);
+  const [collectorStatuses, setCollectorStatuses] = useState<CollectorStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ path: '', description: '' });
@@ -37,10 +40,10 @@ export default function ConfiguracoesPage() {
     try {
       const [f, s] = await Promise.all([
         api.get<MonitoredFolder[]>('/monitored-folders'),
-        api.get<CollectorStatus>('/collector/status'),
+        api.get<CollectorStatus[]>('/collector/status'),
       ]);
       setFolders(f);
-      setCollectorStatus(s);
+      setCollectorStatuses(Array.isArray(s) ? s : []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -89,48 +92,53 @@ export default function ConfiguracoesPage() {
       <Header title="Configurações" />
 
       <main className="flex-1 p-6 space-y-6">
-        {/* Status do Coletor */}
+        {/* Status dos Coletores */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <Activity className="h-4 w-4 text-blue-400" /> Status do Coletor Windows
+            <Activity className="h-4 w-4 text-blue-400" /> Status dos Coletores
           </h2>
-          {collectorStatus ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Status</p>
-                <p className={`text-sm font-medium ${collectorStatus.isRunning ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {collectorStatus.isRunning ? 'Online' : 'Offline'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Hostname</p>
-                <p className="text-sm text-white">{collectorStatus.hostname ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Versão</p>
-                <p className="text-sm text-white">{collectorStatus.version ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Última atividade</p>
-                <p className="text-sm text-white">
-                  {collectorStatus.lastSeenAt ? formatDate(collectorStatus.lastSeenAt) : '—'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Eventos hoje</p>
-                <p className="text-sm text-white">{(collectorStatus.eventsToday ?? 0).toLocaleString('pt-BR')}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Logins hoje</p>
-                <p className="text-sm text-white">{(collectorStatus.loginToday ?? 0).toLocaleString('pt-BR')}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 mb-1">Acessos a arquivos hoje</p>
-                <p className="text-sm text-white">{(collectorStatus.fileToday ?? 0).toLocaleString('pt-BR')}</p>
-              </div>
-            </div>
+          {loading ? (
+            <p className="text-sm text-slate-500">Carregando...</p>
+          ) : collectorStatuses.length === 0 ? (
+            <p className="text-sm text-slate-500">Nenhum coletor conectado. Cadastre servidores em <strong>Servidores</strong> e instale o coletor.</p>
           ) : (
-            <p className="text-sm text-slate-500">{loading ? 'Carregando...' : 'Coletor nunca conectado'}</p>
+            <div className="space-y-3">
+              {collectorStatuses.map((s) => (
+                <div key={s.id} className="p-4 bg-slate-800/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block h-2 w-2 rounded-full ${s.isRunning ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                      <p className="text-sm font-medium text-white">{s.hostname ?? s.serverId}</p>
+                    </div>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${s.isRunning ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                      {s.isRunning ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                    <div>
+                      <p className="text-slate-500 mb-0.5">Versão</p>
+                      <p className="text-white">{s.version ?? '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 mb-0.5">Última atividade</p>
+                      <p className="text-white">{s.lastSeenAt ? formatDate(s.lastSeenAt) : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 mb-0.5">Eventos hoje</p>
+                      <p className="text-white">{(s.eventsToday ?? 0).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 mb-0.5">Logins / Arquivos</p>
+                      <p className="text-white">{(s.loginToday ?? 0).toLocaleString('pt-BR')} / {(s.fileToday ?? 0).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 mb-0.5">Processos hoje</p>
+                      <p className="text-white">{(s.processToday ?? 0).toLocaleString('pt-BR')}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
