@@ -11,10 +11,11 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
+  Download,
 } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { api } from '@/lib/api';
-import { formatDate } from '@/lib/utils';
+import { formatDate, exportToCsv } from '@/lib/utils';
 import { toast } from 'sonner';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -227,12 +228,30 @@ function TabUsuario() {
       {/* Resultado */}
       {result && (
         <>
-          {/* Resumo */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <SummaryCard label="Total de eventos" value={result.timeline.length} color="border-slate-700 text-slate-300" />
-            <SummaryCard label="Logins bem-sucedidos" value={result.totalLogins} color="border-emerald-800/50 text-emerald-400" />
-            <SummaryCard label="Falhas de login" value={result.totalFailedLogins} color="border-red-800/50 text-red-400" />
-            <SummaryCard label="Eventos de arquivo" value={result.totalFileEvents} color="border-purple-800/50 text-purple-400" />
+          {/* Resumo + Exportar */}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1">
+              <SummaryCard label="Total de eventos" value={result.timeline.length} color="border-slate-700 text-slate-300" />
+              <SummaryCard label="Logins bem-sucedidos" value={result.totalLogins} color="border-emerald-800/50 text-emerald-400" />
+              <SummaryCard label="Falhas de login" value={result.totalFailedLogins} color="border-red-800/50 text-red-400" />
+              <SummaryCard label="Eventos de arquivo" value={result.totalFileEvents} color="border-purple-800/50 text-purple-400" />
+            </div>
+            <button
+              onClick={() => {
+                const headers = ['Data/Hora', 'Tipo', 'Descrição', 'Caminho'];
+                const rows = result.timeline.map((item) => [
+                  new Date(item.timestamp).toLocaleString('pt-BR'),
+                  item.type,
+                  item.detail,
+                  (item.extra.filePath as string | undefined) ?? '',
+                ]);
+                exportToCsv(`atividade_${result.username}_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg border border-slate-700 transition flex-shrink-0"
+            >
+              <Download className="h-4 w-4" />
+              Exportar CSV
+            </button>
           </div>
 
           {/* Timeline agrupada por dia */}
@@ -340,9 +359,31 @@ function TabPasta() {
 
       {result && result.totalEvents > 0 && (
         <>
-          <div className="grid grid-cols-2 gap-3">
-            <SummaryCard label="Total de eventos" value={result.totalEvents} color="border-slate-700 text-slate-300" />
-            <SummaryCard label="Usuários distintos" value={result.uniqueUsers} color="border-yellow-800/50 text-yellow-400" />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="grid grid-cols-2 gap-3 flex-1">
+              <SummaryCard label="Total de eventos" value={result.totalEvents} color="border-slate-700 text-slate-300" />
+              <SummaryCard label="Usuários distintos" value={result.uniqueUsers} color="border-yellow-800/50 text-yellow-400" />
+            </div>
+            <button
+              onClick={() => {
+                const headers = ['Usuário', 'Total', 'Leitura', 'Escrita', 'Exclusão', 'Renomeação', 'Permissão', 'Último acesso'];
+                const rows = result.userSummary.map((u) => [
+                  u.username,
+                  String(u.count),
+                  String(u.actions['READ'] ?? 0),
+                  String(u.actions['WRITE'] ?? 0),
+                  String(u.actions['DELETE'] ?? 0),
+                  String(u.actions['RENAME'] ?? 0),
+                  String(u.actions['PERMISSION_CHANGE'] ?? 0),
+                  new Date(u.lastSeen).toLocaleString('pt-BR'),
+                ]);
+                exportToCsv(`pasta_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg border border-slate-700 transition flex-shrink-0"
+            >
+              <Download className="h-4 w-4" />
+              Exportar CSV
+            </button>
           </div>
 
           {/* Tabela de usuários */}
@@ -494,12 +535,33 @@ function TabAcao() {
 
       {result && (
         <>
-          <div className="grid grid-cols-1 gap-3">
-            <SummaryCard
-              label={`Total de eventos de ${actionLabels[result.action] ?? result.action} em "${result.folderPath}"`}
-              value={result.total}
-              color={result.total > 0 ? 'border-red-800/50 text-red-400' : 'border-slate-700 text-slate-400'}
-            />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex-1">
+              <SummaryCard
+                label={`Total de eventos de ${actionLabels[result.action] ?? result.action} em "${result.folderPath}"`}
+                value={result.total}
+                color={result.total > 0 ? 'border-red-800/50 text-red-400' : 'border-slate-700 text-slate-400'}
+              />
+            </div>
+            {result.events.length > 0 && (
+              <button
+                onClick={() => {
+                  const headers = ['Usuário', 'Domínio', 'Arquivo afetado', 'Processo', 'Data/Hora'];
+                  const rows = result.events.map((e) => [
+                    e.username,
+                    e.domain ?? '',
+                    e.filePath,
+                    e.processName ?? '',
+                    new Date(e.timestamp).toLocaleString('pt-BR'),
+                  ]);
+                  exportToCsv(`acao_${result.action.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg border border-slate-700 transition flex-shrink-0"
+              >
+                <Download className="h-4 w-4" />
+                Exportar CSV
+              </button>
+            )}
           </div>
 
           {result.events.length > 0 && (

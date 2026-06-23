@@ -8,28 +8,41 @@ export class DashboardService {
   async getSummary() {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const yesterday = new Date(today);
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
 
     const [
       totalLoginToday,
       failedLoginToday,
       totalFileToday,
-      collectorStatus,
+      totalProcessToday,
+      totalAccountToday,
+      totalSqlToday,
+      collectors,
+      recentAlerts,
       recentLoginEvents,
       recentFileEvents,
     ] = await Promise.all([
-      this.prisma.loginEvent.count({
-        where: { timestamp: { gte: today }, success: true },
-      }),
-      this.prisma.loginEvent.count({
-        where: { timestamp: { gte: today }, success: false },
-      }),
-      this.prisma.fileEvent.count({
-        where: { timestamp: { gte: today } },
-      }),
-      this.prisma.collectorStatus.findFirst({
+      this.prisma.loginEvent.count({ where: { timestamp: { gte: today }, success: true } }),
+      this.prisma.loginEvent.count({ where: { timestamp: { gte: today }, success: false } }),
+      this.prisma.fileEvent.count({ where: { timestamp: { gte: today } } }),
+      this.prisma.processEvent.count({ where: { timestamp: { gte: today } } }),
+      this.prisma.accountEvent.count({ where: { timestamp: { gte: today } } }),
+      this.prisma.sqlEvent.count({ where: { timestamp: { gte: today } } }),
+      this.prisma.collectorStatus.findMany({
         orderBy: { updatedAt: 'desc' },
+        include: { server: { select: { id: true, name: true, hostname: true } } },
+      }),
+      this.prisma.alert.findMany({
+        orderBy: { triggeredAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          triggeredAt: true,
+          detail: true,
+          eventCount: true,
+          notified: true,
+          rule: { select: { id: true, name: true, category: true } },
+          server: { select: { id: true, name: true } },
+        },
       }),
       this.prisma.loginEvent.findMany({
         orderBy: { timestamp: 'desc' },
@@ -57,16 +70,22 @@ export class DashboardService {
       }),
     ]);
 
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+
     return {
       today: {
         logins: totalLoginToday,
         failedLogins: failedLoginToday,
         fileEvents: totalFileToday,
+        processEvents: totalProcessToday,
+        accountEvents: totalAccountToday,
+        sqlEvents: totalSqlToday,
       },
-      collector: collectorStatus ? {
-        ...collectorStatus,
-        isRunning: collectorStatus.lastSeenAt > new Date(Date.now() - 10 * 60 * 1000),
-      } : null,
+      collectors: collectors.map((c) => ({
+        ...c,
+        isRunning: c.lastSeenAt > tenMinutesAgo,
+      })),
+      recentAlerts,
       recentLoginEvents,
       recentFileEvents,
     };
@@ -82,7 +101,6 @@ export class DashboardService {
       select: { timestamp: true, success: true },
     });
 
-    // Agrupar por dia
     const byDay = new Map<string, { success: number; failed: number }>();
     for (const event of events) {
       const day = event.timestamp.toISOString().slice(0, 10);
