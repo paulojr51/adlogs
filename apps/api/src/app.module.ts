@@ -17,6 +17,10 @@ import { ProcessEventsModule } from './process-events/process-events.module';
 import { ServerConfigModule } from './server-config/server-config.module';
 import { AccountEventsModule } from './account-events/account-events.module';
 import { SqlEventsModule } from './sql-events/sql-events.module';
+import { NotificationModule } from './notification/notification.module';
+import { AlertRulesModule } from './alert-rules/alert-rules.module';
+import { AlertsModule } from './alerts/alerts.module';
+import { AlertCheckerModule } from './alert-checker/alert-checker.module';
 
 @Module({
   imports: [
@@ -36,6 +40,10 @@ import { SqlEventsModule } from './sql-events/sql-events.module';
     ServerConfigModule,
     AccountEventsModule,
     SqlEventsModule,
+    NotificationModule,
+    AlertRulesModule,
+    AlertsModule,
+    AlertCheckerModule,
   ],
   providers: [
     {
