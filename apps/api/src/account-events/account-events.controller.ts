@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { ServerApiKeyGuard } from '../auth/guards/server-api-key.guard';
 import { CurrentServer } from '../auth/decorators/current-server.decorator';
 import type { Server } from '@adlogs/shared';
@@ -22,6 +23,7 @@ export class AccountEventsController {
   }
 
   @Post('collector/events/account')
+  @Public()
   @UseGuards(ServerApiKeyGuard)
   ingestBatch(@CurrentServer() server: Server, @Body() dto: BatchAccountEventsDto) {
     return this.accountEventsService.ingestBatch(server.id, dto.events ?? []);

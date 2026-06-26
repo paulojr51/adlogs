@@ -4,6 +4,7 @@ import type { Server } from '@adlogs/shared';
 import { CollectorService, CollectorHeartbeatDto, LoginEventInput, FileEventInput } from './collector.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { ServerApiKeyGuard } from '../auth/guards/server-api-key.guard';
 import { CurrentServer } from '../auth/decorators/current-server.decorator';
 import { ProcessEventsService } from '../process-events/process-events.service';
@@ -29,30 +30,35 @@ export class CollectorController {
   ) {}
 
   @Post('heartbeat')
+  @Public()
   @UseGuards(ServerApiKeyGuard)
   heartbeat(@CurrentServer() server: Server, @Body() data: CollectorHeartbeatDto) {
     return this.service.heartbeat(server, data);
   }
 
   @Get('config')
+  @Public()
   @UseGuards(ServerApiKeyGuard)
   getConfig(@CurrentServer() server: Server) {
     return this.service.getConfig(server.id);
   }
 
   @Post('events/login')
+  @Public()
   @UseGuards(ServerApiKeyGuard)
   ingestLogin(@CurrentServer() server: Server, @Body() dto: BatchLoginEventsDto) {
     return this.service.ingestLoginEvents(server.id, dto.events ?? []);
   }
 
   @Post('events/file')
+  @Public()
   @UseGuards(ServerApiKeyGuard)
   ingestFile(@CurrentServer() server: Server, @Body() dto: BatchFileEventsDto) {
     return this.service.ingestFileEvents(server.id, dto.events ?? []);
   }
 
   @Post('events/process')
+  @Public()
   @UseGuards(ServerApiKeyGuard)
   ingestProcess(@CurrentServer() server: Server, @Body() dto: BatchProcessEventsDto) {
     return this.processEvents.ingestBatch(server.id, dto.events ?? []);
