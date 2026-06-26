@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { IsArray } from 'class-validator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -8,6 +9,7 @@ import type { Server } from '@adlogs/shared';
 import { SqlEventsService, SqlEventsFilterDto } from './sql-events.service';
 
 class BatchSqlEventsDto {
+  @IsArray()
   events!: Parameters<SqlEventsService['ingestBatch']>[1];
 }
 

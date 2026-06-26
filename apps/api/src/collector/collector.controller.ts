@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { IsArray } from 'class-validator';
 import { Role } from '@adlogs/shared';
 import type { Server } from '@adlogs/shared';
 import { CollectorService, CollectorHeartbeatDto, LoginEventInput, FileEventInput } from './collector.service';
@@ -11,14 +12,17 @@ import { ProcessEventsService } from '../process-events/process-events.service';
 import type { ProcessEventInput } from '../process-events/process-events.service';
 
 class BatchLoginEventsDto {
+  @IsArray()
   events!: LoginEventInput[];
 }
 
 class BatchFileEventsDto {
+  @IsArray()
   events!: FileEventInput[];
 }
 
 class BatchProcessEventsDto {
+  @IsArray()
   events!: ProcessEventInput[];
 }
 
