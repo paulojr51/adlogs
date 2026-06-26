@@ -162,6 +162,7 @@ model LoginEvent {
   @@index([success])
   @@index([sourceIp])
   @@index([windowsEventId])
+  @@index([windowsRecordId])
   @@map("login_events")
 }
 
@@ -193,6 +194,7 @@ model FileEvent {
   @@index([action])
   @@index([monitoredFolder])
   @@index([windowsEventId])
+  @@index([windowsRecordId])
   @@map("file_events")
 }
 

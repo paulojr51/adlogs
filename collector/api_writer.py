@@ -13,7 +13,7 @@ import requests
 
 logger = logging.getLogger('adlogs.api_writer')
 
-_TIMEOUT = 10
+_TIMEOUT = 60
 
 
 def _snake_to_camel(name: str) -> str:
