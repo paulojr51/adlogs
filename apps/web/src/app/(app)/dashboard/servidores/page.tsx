@@ -212,7 +212,8 @@ export default function ServidoresPage() {
     if (!configData) return;
     setSavingConfig(true);
     try {
-      await api.patch(`/servers/${id}/config`, configData);
+      const { collectLogins, collectFiles, collectProcesses, collectAccountChanges, collectSqlServer } = configData;
+      await api.patch(`/servers/${id}/config`, { collectLogins, collectFiles, collectProcesses, collectAccountChanges, collectSqlServer });
       toast.success('Configuração salva — o coletor aplicará na próxima busca');
       setConfigPanelId(null);
       setConfigData(null);
@@ -226,16 +227,31 @@ export default function ServidoresPage() {
     }
   }
 
+  function copyToClipboard(text: string) {
+    if (navigator.clipboard) {
+      void navigator.clipboard.writeText(text);
+    } else {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+  }
+
   function copyKey() {
     if (!revealedKey) return;
-    void navigator.clipboard.writeText(revealedKey.key);
+    copyToClipboard(revealedKey.key);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   function copyConfigKey() {
     if (!configKey) return;
-    void navigator.clipboard.writeText(configKey);
+    copyToClipboard(configKey);
     setConfigKeyCopied(true);
     setTimeout(() => setConfigKeyCopied(false), 2000);
   }
