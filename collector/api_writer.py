@@ -5,6 +5,7 @@ Substitui o acesso direto ao PostgreSQL — todos os eventos agora
 vão via HTTPS com autenticação por X-Server-Key.
 """
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -15,11 +16,16 @@ logger = logging.getLogger('adlogs.api_writer')
 _TIMEOUT = 10
 
 
+def _snake_to_camel(name: str) -> str:
+    return re.sub(r'_([a-z])', lambda m: m.group(1).upper(), name)
+
+
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
-    """Converte datetime para ISO string e retorna cópia segura para JSON."""
+    """Converte datetime para ISO string e chaves para camelCase (padrão da API)."""
     result = {}
     for key, value in event.items():
-        result[key] = value.isoformat() if isinstance(value, datetime) else value
+        camel_key = _snake_to_camel(key)
+        result[camel_key] = value.isoformat() if isinstance(value, datetime) else value
     return result
 
 
