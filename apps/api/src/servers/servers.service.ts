@@ -90,12 +90,23 @@ export class ServersService {
   }
 
   async remove(id: string) {
-    await this.findOne(id);
-    await this.prisma.server.update({
-      where: { id },
-      data: { active: false },
+    const server = await this.findOne(id);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.alert.deleteMany({ where: { serverId: id } });
+      await tx.alertRule.deleteMany({ where: { serverId: id } });
+      await tx.collectorStatus.deleteMany({ where: { serverId: id } });
+      await tx.monitoredFolder.deleteMany({ where: { serverId: id } });
+      await tx.serverConfig.deleteMany({ where: { serverId: id } });
+      await tx.loginEvent.deleteMany({ where: { serverId: id } });
+      await tx.fileEvent.deleteMany({ where: { serverId: id } });
+      await tx.processEvent.deleteMany({ where: { serverId: id } });
+      await tx.accountEvent.deleteMany({ where: { serverId: id } });
+      await tx.sqlEvent.deleteMany({ where: { serverId: id } });
+      await tx.server.delete({ where: { id } });
     });
-    return { message: 'Servidor desativado com sucesso' };
+
+    return { message: `Servidor "${server.name}" excluído permanentemente` };
   }
 
   private _generateKey(): { rawKey: string; keyHash: string } {

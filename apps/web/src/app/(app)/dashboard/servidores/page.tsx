@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Server, Plus, RefreshCw, Trash2, Copy, CheckCircle2, Clock, Settings } from 'lucide-react';
+import { Server, Plus, Trash2, Copy, CheckCircle2, Clock, Settings, KeyRound, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -14,6 +14,7 @@ interface ServerRecord {
   active: boolean;
   lastSeenAt: string | null;
   createdAt: string;
+  _count?: { loginEvents: number; fileEvents: number };
 }
 
 interface ServerConfig {
@@ -69,6 +70,11 @@ export default function ServidoresPage() {
   const [configPanelId, setConfigPanelId] = useState<string | null>(null);
   const [configData, setConfigData] = useState<ServerConfig | null>(null);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [configKey, setConfigKey] = useState<string | null>(null);
+  const [configKeyCopied, setConfigKeyCopied] = useState(false);
+  const [rotatingKey, setRotatingKey] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ServerRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -106,14 +112,18 @@ export default function ServidoresPage() {
     }
   }
 
-  async function handleRotateKey(id: string) {
-    if (!confirm('Gerar nova chave? A chave anterior será invalidada imediatamente.')) return;
+  async function handleRotateKeyInPanel(id: string) {
+    if (!confirm('Gerar nova chave? A chave anterior será invalidada imediatamente e o coletor parará de enviar até ser reconfigurado.')) return;
+    setRotatingKey(true);
     try {
       const res = await api.post<RotateKeyResponse>(`/servers/${id}/rotate-key`, {});
-      setRevealedKey({ serverId: id, key: res.apiKey });
-      toast.success('Nova chave gerada');
+      setConfigKey(res.apiKey);
+      setConfigKeyCopied(false);
+      toast.success('Nova chave gerada — copie agora');
     } catch {
       toast.error('Erro ao rotacionar chave');
+    } finally {
+      setRotatingKey(false);
     }
   }
 
@@ -127,23 +137,33 @@ export default function ServidoresPage() {
     }
   }
 
-  async function handleDelete(id: string, name: string) {
-    if (!confirm(`Desativar servidor "${name}"? O coletor perderá acesso imediatamente.`)) return;
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api.delete(`/servers/${id}`);
-      toast.success('Servidor desativado');
+      await api.delete(`/servers/${deleteTarget.id}`);
+      toast.success(`Servidor "${deleteTarget.name}" excluído permanentemente`);
+      setDeleteTarget(null);
       void load();
     } catch {
-      toast.error('Erro ao desativar servidor');
+      toast.error('Erro ao excluir servidor');
+    } finally {
+      setDeleting(false);
     }
   }
 
   async function handleOpenConfig(id: string) {
-    if (configPanelId === id) { setConfigPanelId(null); setConfigData(null); return; }
+    if (configPanelId === id) {
+      setConfigPanelId(null);
+      setConfigData(null);
+      setConfigKey(null);
+      return;
+    }
     try {
       const cfg = await api.get<ServerConfig>(`/servers/${id}/config`);
       setConfigData(cfg);
       setConfigPanelId(id);
+      setConfigKey(null);
     } catch {
       toast.error('Erro ao carregar configuração');
     }
@@ -157,6 +177,7 @@ export default function ServidoresPage() {
       toast.success('Configuração salva — o coletor aplicará na próxima busca');
       setConfigPanelId(null);
       setConfigData(null);
+      setConfigKey(null);
     } catch {
       toast.error('Erro ao salvar configuração');
     } finally {
@@ -171,8 +192,57 @@ export default function ServidoresPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function copyConfigKey() {
+    if (!configKey) return;
+    void navigator.clipboard.writeText(configKey);
+    setConfigKeyCopied(true);
+    setTimeout(() => setConfigKeyCopied(false), 2000);
+  }
+
+  const eventCount = deleteTarget?._count
+    ? (deleteTarget._count.loginEvents + deleteTarget._count.fileEvents)
+    : null;
+
   return (
     <div className="p-6 space-y-6">
+      {/* Modal de confirmação de exclusão */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-red-700 rounded-xl p-6 max-w-md w-full mx-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-6 w-6 text-red-400 flex-shrink-0" />
+              <h2 className="text-white font-semibold text-lg">Excluir servidor permanentemente?</h2>
+            </div>
+            <p className="text-slate-300 text-sm">
+              Você está prestes a excluir <strong className="text-white">{deleteTarget.name}</strong> e{' '}
+              <strong className="text-red-400">todos os eventos associados</strong>
+              {eventCount !== null && eventCount > 0 && (
+                <> (<strong className="text-red-400">{eventCount.toLocaleString('pt-BR')} registros</strong>)</>
+              )}.
+            </p>
+            <p className="text-slate-400 text-xs bg-slate-800 rounded-lg px-3 py-2">
+              Esta ação é irreversível. O coletor perderá acesso imediatamente.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => void handleConfirmDelete()}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 bg-red-700 hover:bg-red-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition"
+              >
+                {deleting ? 'Excluindo...' : 'Excluir permanentemente'}
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Servidores Monitorados</h1>
@@ -188,7 +258,7 @@ export default function ServidoresPage() {
         </button>
       </div>
 
-      {/* Alerta de API Key revelada */}
+      {/* Alerta de API Key revelada (após criar) */}
       {revealedKey && (
         <div className="bg-amber-950 border border-amber-600 rounded-xl p-4 space-y-3">
           <p className="text-amber-300 font-semibold text-sm flex items-center gap-2">
@@ -295,48 +365,93 @@ export default function ServidoresPage() {
                       className={`p-1.5 rounded transition text-xs flex items-center gap-1 ${
                         configOpen ? 'bg-blue-600 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
                       }`}
-                      title="Configurar coleta"
+                      title="Configurações do servidor"
                     >
                       <Settings className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={() => void handleRotateKey(srv.id)}
-                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded transition" title="Rotacionar chave">
-                      <RefreshCw className="h-3.5 w-3.5" />
                     </button>
                     <button onClick={() => void handleToggle(srv)}
                       className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs rounded transition">
                       {srv.active ? 'Desativar' : 'Ativar'}
                     </button>
-                    <button onClick={() => void handleDelete(srv.id, srv.name)}
-                      className="p-1.5 hover:bg-red-900/30 text-red-500 rounded transition" title="Remover">
+                    <button
+                      onClick={() => setDeleteTarget(srv)}
+                      className="p-1.5 hover:bg-red-900/30 text-red-500 rounded transition"
+                      title="Excluir servidor permanentemente"
+                    >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
 
-                {/* Painel de configuração de coleta */}
+                {/* Painel de configurações */}
                 {configOpen && configData && (
-                  <div className="border-t border-slate-700 px-4 py-4 bg-slate-800/50">
-                    <p className="text-xs text-slate-400 mb-3 font-medium">O que coletar deste servidor:</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-                      {(Object.keys(CONFIG_LABELS) as Array<keyof ServerConfig>).map((key) => {
-                        const { label, hint } = CONFIG_LABELS[key];
-                        return (
-                          <label key={key} className="flex items-start gap-3 cursor-pointer group">
-                            <input
-                              type="checkbox"
-                              checked={configData[key]}
-                              onChange={(e) => setConfigData({ ...configData, [key]: e.target.checked })}
-                              className="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500 cursor-pointer"
-                            />
-                            <div>
-                              <p className="text-white text-sm group-hover:text-blue-300 transition">{label}</p>
-                              <p className="text-slate-500 text-xs">{hint}</p>
-                            </div>
-                          </label>
-                        );
-                      })}
+                  <div className="border-t border-slate-700 px-4 py-4 bg-slate-800/50 space-y-5">
+                    {/* Coleta */}
+                    <div>
+                      <p className="text-xs text-slate-400 mb-3 font-medium">O que coletar deste servidor:</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {(Object.keys(CONFIG_LABELS) as Array<keyof ServerConfig>).map((key) => {
+                          const { label, hint } = CONFIG_LABELS[key];
+                          return (
+                            <label key={key} className="flex items-start gap-3 cursor-pointer group">
+                              <input
+                                type="checkbox"
+                                checked={configData[key]}
+                                onChange={(e) => setConfigData({ ...configData, [key]: e.target.checked })}
+                                className="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                              />
+                              <div>
+                                <p className="text-white text-sm group-hover:text-blue-300 transition">{label}</p>
+                                <p className="text-slate-500 text-xs">{hint}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
+
+                    {/* Chave de API */}
+                    <div className="border-t border-slate-700 pt-4">
+                      <p className="text-xs text-slate-400 mb-2 font-medium flex items-center gap-1.5">
+                        <KeyRound className="h-3.5 w-3.5" /> Chave de API do coletor
+                      </p>
+                      {configKey ? (
+                        <div className="space-y-2">
+                          <p className="text-amber-400 text-xs flex items-center gap-1">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Nova chave gerada — copie agora, não será exibida novamente
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 bg-slate-900 rounded px-3 py-2 text-green-400 text-xs font-mono break-all">
+                              {configKey}
+                            </code>
+                            <button onClick={copyConfigKey} className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition" title="Copiar">
+                              {configKeyCopied
+                                ? <CheckCircle2 className="h-4 w-4 text-green-400" />
+                                : <Copy className="h-4 w-4 text-slate-400" />}
+                            </button>
+                          </div>
+                          <p className="text-slate-500 text-xs">
+                            Atualize <code className="bg-slate-900 px-1 rounded">SERVER_API_KEY</code> no <code className="bg-slate-900 px-1 rounded">.env</code> do coletor e reinicie o serviço.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between bg-slate-900 rounded-lg px-3 py-2.5">
+                          <p className="text-slate-500 text-xs">
+                            A chave não pode ser recuperada. Gere uma nova se precisar reconfigurar o coletor.
+                          </p>
+                          <button
+                            onClick={() => void handleRotateKeyInPanel(srv.id)}
+                            disabled={rotatingKey}
+                            className="ml-3 flex-shrink-0 px-3 py-1 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition"
+                          >
+                            {rotatingKey ? 'Gerando...' : 'Gerar nova chave'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botões */}
                     <div className="flex gap-2">
                       <button
                         onClick={() => void handleSaveConfig(srv.id)}
@@ -346,10 +461,10 @@ export default function ServidoresPage() {
                         {savingConfig ? 'Salvando...' : 'Salvar configuração'}
                       </button>
                       <button
-                        onClick={() => { setConfigPanelId(null); setConfigData(null); }}
+                        onClick={() => { setConfigPanelId(null); setConfigData(null); setConfigKey(null); }}
                         className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-medium rounded-lg transition"
                       >
-                        Cancelar
+                        Fechar
                       </button>
                     </div>
                   </div>
@@ -360,7 +475,7 @@ export default function ServidoresPage() {
         )}
         {!loading && servers.length > 0 && (
           <button onClick={() => void load()} className="text-xs text-slate-500 hover:text-slate-400 flex items-center gap-1 mt-1">
-            <RefreshCw className="h-3 w-3" /> Atualizar lista
+            Atualizar lista
           </button>
         )}
       </div>
@@ -373,7 +488,7 @@ export default function ServidoresPage() {
           <li>Crie o servidor aqui e copie a API Key gerada</li>
           <li>No servidor Windows remoto, instale o coletor: <code className="bg-blue-900 px-1 rounded">.\install.ps1</code></li>
           <li>Configure <code className="bg-blue-900 px-1 rounded">API_URL</code> e <code className="bg-blue-900 px-1 rounded">SERVER_API_KEY</code> no <code className="bg-blue-900 px-1 rounded">.env</code> do coletor</li>
-          <li>Clique em <Settings className="h-3 w-3 inline" /> <strong>Configurar</strong> para escolher o que coletar deste servidor</li>
+          <li>Clique em <Settings className="h-3 w-3 inline" /> <strong>Configurações</strong> para escolher o que coletar e gerenciar a chave</li>
         </ol>
       </div>
     </div>
