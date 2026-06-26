@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Server, Plus, Trash2, Copy, CheckCircle2, Clock, Settings, KeyRound, AlertTriangle } from 'lucide-react';
+import { Server, Plus, Trash2, Copy, CheckCircle2, Clock, Settings, KeyRound, AlertTriangle, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -23,6 +23,13 @@ interface ServerConfig {
   collectProcesses: boolean;
   collectAccountChanges: boolean;
   collectSqlServer: boolean;
+}
+
+interface InfoForm {
+  name: string;
+  hostname: string;
+  ipAddress: string;
+  description: string;
 }
 
 interface CreateServerResponse {
@@ -75,6 +82,9 @@ export default function ServidoresPage() {
   const [rotatingKey, setRotatingKey] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ServerRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [infoForm, setInfoForm] = useState<InfoForm | null>(null);
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [savingInfo, setSavingInfo] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -152,20 +162,49 @@ export default function ServidoresPage() {
     }
   }
 
-  async function handleOpenConfig(id: string) {
-    if (configPanelId === id) {
+  async function handleOpenConfig(srv: ServerRecord) {
+    if (configPanelId === srv.id) {
       setConfigPanelId(null);
       setConfigData(null);
       setConfigKey(null);
+      setInfoForm(null);
+      setEditingInfo(false);
       return;
     }
     try {
-      const cfg = await api.get<ServerConfig>(`/servers/${id}/config`);
+      const cfg = await api.get<ServerConfig>(`/servers/${srv.id}/config`);
       setConfigData(cfg);
-      setConfigPanelId(id);
+      setConfigPanelId(srv.id);
       setConfigKey(null);
+      setInfoForm({
+        name: srv.name,
+        hostname: srv.hostname ?? '',
+        ipAddress: srv.ipAddress ?? '',
+        description: srv.description ?? '',
+      });
+      setEditingInfo(false);
     } catch {
       toast.error('Erro ao carregar configuração');
+    }
+  }
+
+  async function handleSaveInfo(id: string) {
+    if (!infoForm) return;
+    setSavingInfo(true);
+    try {
+      await api.patch(`/servers/${id}`, {
+        name: infoForm.name.trim(),
+        hostname: infoForm.hostname.trim() || undefined,
+        ipAddress: infoForm.ipAddress.trim() || undefined,
+        description: infoForm.description.trim() || undefined,
+      });
+      toast.success('Informações atualizadas');
+      setEditingInfo(false);
+      void load();
+    } catch {
+      toast.error('Erro ao salvar informações');
+    } finally {
+      setSavingInfo(false);
     }
   }
 
@@ -178,6 +217,8 @@ export default function ServidoresPage() {
       setConfigPanelId(null);
       setConfigData(null);
       setConfigKey(null);
+      setInfoForm(null);
+      setEditingInfo(false);
     } catch {
       toast.error('Erro ao salvar configuração');
     } finally {
@@ -361,7 +402,7 @@ export default function ServidoresPage() {
                   </span>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button
-                      onClick={() => void handleOpenConfig(srv.id)}
+                      onClick={() => void handleOpenConfig(srv)}
                       className={`p-1.5 rounded transition text-xs flex items-center gap-1 ${
                         configOpen ? 'bg-blue-600 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
                       }`}
@@ -384,10 +425,84 @@ export default function ServidoresPage() {
                 </div>
 
                 {/* Painel de configurações */}
-                {configOpen && configData && (
+                {configOpen && configData && infoForm && (
                   <div className="border-t border-slate-700 px-4 py-4 bg-slate-800/50 space-y-5">
-                    {/* Coleta */}
+
+                    {/* Informações do servidor */}
                     <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs text-slate-400 font-medium">Informações do servidor:</p>
+                        {!editingInfo && (
+                          <button
+                            onClick={() => setEditingInfo(true)}
+                            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition"
+                          >
+                            <Pencil className="h-3 w-3" /> Editar
+                          </button>
+                        )}
+                      </div>
+
+                      {editingInfo ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {([
+                            { label: 'Nome *', field: 'name' as const, placeholder: 'Nome do servidor' },
+                            { label: 'Hostname', field: 'hostname' as const, placeholder: 'ex: WIN-DC01' },
+                            { label: 'IP', field: 'ipAddress' as const, placeholder: 'ex: 192.168.1.10' },
+                            { label: 'Descrição', field: 'description' as const, placeholder: 'ex: Controlador de domínio' },
+                          ]).map(({ label, field, placeholder }) => (
+                            <div key={field}>
+                              <label className="block text-slate-500 text-xs mb-1">{label}</label>
+                              <input
+                                value={infoForm[field]}
+                                onChange={(e) => setInfoForm({ ...infoForm, [field]: e.target.value })}
+                                placeholder={placeholder}
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
+                          ))}
+                          <div className="sm:col-span-2 flex gap-2">
+                            <button
+                              onClick={() => void handleSaveInfo(srv.id)}
+                              disabled={savingInfo || !infoForm.name.trim()}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition"
+                            >
+                              {savingInfo ? 'Salvando...' : 'Salvar informações'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingInfo(false);
+                                setInfoForm({
+                                  name: srv.name,
+                                  hostname: srv.hostname ?? '',
+                                  ipAddress: srv.ipAddress ?? '',
+                                  description: srv.description ?? '',
+                                });
+                              }}
+                              className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-medium rounded-lg transition"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          {[
+                            { label: 'Nome', value: infoForm.name },
+                            { label: 'Hostname', value: infoForm.hostname || '—' },
+                            { label: 'IP', value: infoForm.ipAddress || '—' },
+                            { label: 'Descrição', value: infoForm.description || '—' },
+                          ].map(({ label, value }) => (
+                            <div key={label}>
+                              <p className="text-slate-500 text-xs mb-0.5">{label}</p>
+                              <p className="text-white text-sm truncate">{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Coleta */}
+                    <div className="border-t border-slate-700 pt-4">
                       <p className="text-xs text-slate-400 mb-3 font-medium">O que coletar deste servidor:</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {(Object.keys(CONFIG_LABELS) as Array<keyof ServerConfig>).map((key) => {
@@ -452,16 +567,22 @@ export default function ServidoresPage() {
                     </div>
 
                     {/* Botões */}
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 border-t border-slate-700 pt-4">
                       <button
                         onClick={() => void handleSaveConfig(srv.id)}
                         disabled={savingConfig}
                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition"
                       >
-                        {savingConfig ? 'Salvando...' : 'Salvar configuração'}
+                        {savingConfig ? 'Salvando...' : 'Salvar coleta'}
                       </button>
                       <button
-                        onClick={() => { setConfigPanelId(null); setConfigData(null); setConfigKey(null); }}
+                        onClick={() => {
+                          setConfigPanelId(null);
+                          setConfigData(null);
+                          setConfigKey(null);
+                          setInfoForm(null);
+                          setEditingInfo(false);
+                        }}
                         className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-medium rounded-lg transition"
                       >
                         Fechar
@@ -488,7 +609,7 @@ export default function ServidoresPage() {
           <li>Crie o servidor aqui e copie a API Key gerada</li>
           <li>No servidor Windows remoto, instale o coletor: <code className="bg-blue-900 px-1 rounded">.\install.ps1</code></li>
           <li>Configure <code className="bg-blue-900 px-1 rounded">API_URL</code> e <code className="bg-blue-900 px-1 rounded">SERVER_API_KEY</code> no <code className="bg-blue-900 px-1 rounded">.env</code> do coletor</li>
-          <li>Clique em <Settings className="h-3 w-3 inline" /> <strong>Configurações</strong> para escolher o que coletar e gerenciar a chave</li>
+          <li>Clique em <Settings className="h-3 w-3 inline" /> <strong>Configurações</strong> para editar informações, escolher o que coletar e gerenciar a chave</li>
         </ol>
       </div>
     </div>
