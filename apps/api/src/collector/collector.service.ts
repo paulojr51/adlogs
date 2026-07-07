@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { IsNumber, IsString } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
 import type { Server } from '@adlogs/shared';
 import { PrismaService } from '../prisma/prisma.service';
+
+export class UpdateConfigDto {
+  @IsOptional() @IsBoolean() collectLogins?: boolean;
+  @IsOptional() @IsBoolean() collectFiles?: boolean;
+  @IsOptional() @IsBoolean() collectProcesses?: boolean;
+  @IsOptional() @IsBoolean() collectAccountChanges?: boolean;
+  @IsOptional() @IsBoolean() collectSqlServer?: boolean;
+}
 
 export class CollectorHeartbeatDto {
   @IsString()
@@ -103,6 +111,28 @@ export class CollectorService {
       ...s,
       isRunning: s.lastSeenAt > tenMinutesAgo,
     }));
+  }
+
+  async updateConfig(serverId: string, dto: UpdateConfigDto) {
+    const data: Record<string, boolean> = {};
+    if (dto.collectLogins         !== undefined) data.collectLogins         = dto.collectLogins;
+    if (dto.collectFiles          !== undefined) data.collectFiles          = dto.collectFiles;
+    if (dto.collectProcesses      !== undefined) data.collectProcesses      = dto.collectProcesses;
+    if (dto.collectAccountChanges !== undefined) data.collectAccountChanges = dto.collectAccountChanges;
+    if (dto.collectSqlServer      !== undefined) data.collectSqlServer      = dto.collectSqlServer;
+
+    return this.prisma.serverConfig.upsert({
+      where: { serverId },
+      update: data,
+      create: {
+        serverId,
+        collectLogins:         dto.collectLogins         ?? true,
+        collectFiles:          dto.collectFiles          ?? true,
+        collectProcesses:      dto.collectProcesses      ?? false,
+        collectAccountChanges: dto.collectAccountChanges ?? false,
+        collectSqlServer:      dto.collectSqlServer      ?? false,
+      },
+    });
   }
 
   async getConfig(serverId: string) {

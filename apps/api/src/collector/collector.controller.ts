@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { IsArray } from 'class-validator';
 import { Role } from '@adlogs/shared';
 import type { Server } from '@adlogs/shared';
-import { CollectorService, CollectorHeartbeatDto, LoginEventInput, FileEventInput } from './collector.service';
+import { CollectorService, CollectorHeartbeatDto, LoginEventInput, FileEventInput, UpdateConfigDto } from './collector.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -45,6 +45,13 @@ export class CollectorController {
   @UseGuards(ServerApiKeyGuard)
   getConfig(@CurrentServer() server: Server) {
     return this.service.getConfig(server.id);
+  }
+
+  @Patch('config')
+  @Public()
+  @UseGuards(ServerApiKeyGuard)
+  updateConfig(@CurrentServer() server: Server, @Body() dto: UpdateConfigDto) {
+    return this.service.updateConfig(server.id, dto);
   }
 
   @Post('events/login')

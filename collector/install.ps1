@@ -45,49 +45,15 @@ function Write-Fail($msg) {
     Write-Host "  ERRO: $msg" -ForegroundColor Red
 }
 
-function Enable-WindowsAudit {
-    Write-Host ""
-    Write-Host "Habilitando politicas de auditoria do Windows..." -ForegroundColor Yellow
-
-    $policies = @(
-        @{ sub = "Logon";                      s = "enable"; f = "enable" },
-        @{ sub = "Logoff";                     s = "enable"; f = "enable" },
-        @{ sub = "Other Logon/Logoff Events";  s = "enable"; f = "enable" },
-        @{ sub = "Account Lockout";            s = "enable"; f = "enable" },
-        @{ sub = "File System";                s = "enable"; f = "enable" },
-        @{ sub = "Handle Manipulation";        s = "enable"; f = "disable" },
-        @{ sub = "User Account Management";    s = "enable"; f = "enable" },
-        @{ sub = "Security Group Management";  s = "enable"; f = "enable" }
-    )
-
-    foreach ($p in $policies) {
-        auditpol /set /subcategory:"$($p.sub)" /success:$($p.s) /failure:$($p.f) 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "      [OK] $($p.sub)" -ForegroundColor Green
-        } else {
-            Write-Host "      [--] $($p.sub) (ignorado)" -ForegroundColor DarkGray
-        }
-    }
-
-    # Garantir auditoria por subcategoria habilitada no registro
-    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
-    $val = (Get-ItemProperty -Path $regPath -Name "SCENoApplyLegacyAuditPolicy" -ErrorAction SilentlyContinue)."SCENoApplyLegacyAuditPolicy"
-    if ($val -ne 1) {
-        Set-ItemProperty -Path $regPath -Name "SCENoApplyLegacyAuditPolicy" -Value 1 -Type DWord
-        Write-Host "      [OK] Auditoria por subcategoria habilitada no registro" -ForegroundColor Green
-    }
-
-    Write-Host ""
-    Write-Host "Verificando:" -ForegroundColor Cyan
-    auditpol /get /subcategory:"Logon","Logoff","Account Lockout"
-}
-
-# Modo: somente auditoria
+# Modo: somente auditoria (delega para audit.ps1)
 if ($EnableAuditOnly) {
-    Write-Host "==================================================" -ForegroundColor Cyan
-    Write-Host "  ADLogs - Habilitar Auditoria Windows" -ForegroundColor Cyan
-    Write-Host "==================================================" -ForegroundColor Cyan
-    Enable-WindowsAudit
+    $auditScript = Join-Path $CollectorDir "audit.ps1"
+    if (Test-Path $auditScript) {
+        & $auditScript
+    } else {
+        Write-Fail "audit.ps1 nao encontrado em $CollectorDir"
+        exit 1
+    }
     exit 0
 }
 
@@ -118,7 +84,7 @@ Write-Host "==================================================" -ForegroundColor
 Write-Host "  ADLogs Collector - Instalador" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
-$TOTAL = 6
+$TOTAL = 7
 
 # PASSO 1: Python
 Write-Step 1 $TOTAL "Verificando Python 3.10+..."
@@ -261,9 +227,48 @@ if ($svc -and $svc.Status -eq "Running") {
     Write-Host "      Para diagnosticar: .\venv\Scripts\python.exe service.py debug" -ForegroundColor Gray
 }
 
-# PASSO 6: Auditoria Windows
-Write-Step 6 $TOTAL "Habilitando auditoria do Windows..."
-Enable-WindowsAudit
+# PASSO 6: Auditoria base (Login/Logoff — sempre necessario)
+Write-Step 6 $TOTAL "Habilitando auditoria de Login/Logoff (base)..."
+$baseAuditPolicies = @(
+    @{ sub = "Logon";                     s = "enable"; f = "enable" },
+    @{ sub = "Logoff";                    s = "enable"; f = "enable" },
+    @{ sub = "Other Logon/Logoff Events"; s = "enable"; f = "enable" },
+    @{ sub = "Account Lockout";           s = "enable"; f = "enable" }
+)
+foreach ($p in $baseAuditPolicies) {
+    auditpol /set /subcategory:"$($p.sub)" /success:$($p.s) /failure:$($p.f) 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK $p.sub
+    } else {
+        Write-Warn "$($p.sub) nao encontrado nesta versao do Windows"
+    }
+}
+$regLsa = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa"
+$lsaVal = (Get-ItemProperty -Path $regLsa -Name "SCENoApplyLegacyAuditPolicy" -ErrorAction SilentlyContinue)."SCENoApplyLegacyAuditPolicy"
+if ($lsaVal -ne 1) {
+    Set-ItemProperty -Path $regLsa -Name "SCENoApplyLegacyAuditPolicy" -Value 1 -Type DWord
+}
+Write-OK "Auditoria base habilitada"
+
+# PASSO 7: Monitoramento adicional (interativo via audit.ps1)
+Write-Step 7 $TOTAL "Configurar monitoramento adicional..."
+Write-Host ""
+Write-Host "      Alem de Login/Logoff, o ADLogs pode monitorar:" -ForegroundColor White
+Write-Host "        [2] Arquivos  - Acesso a arquivos e pastas" -ForegroundColor Gray
+Write-Host "        [3] Processos - Criacao de processos + linha de comando" -ForegroundColor Gray
+Write-Host "        [4] Contas    - Criacao/exclusao/bloqueio de usuarios" -ForegroundColor Gray
+Write-Host ""
+$extraChoice = (Read-Host "      Deseja configurar agora? (S/N, Enter = S)").Trim()
+if ($extraChoice -eq "" -or $extraChoice -match "^[Ss]") {
+    $auditScript = Join-Path $CollectorDir "audit.ps1"
+    if (Test-Path $auditScript) {
+        & $auditScript
+    } else {
+        Write-Warn "audit.ps1 nao encontrado. Execute-o manualmente depois: .\audit.ps1"
+    }
+} else {
+    Write-OK "Pulado. Execute .\audit.ps1 a qualquer momento para configurar."
+}
 
 # Resultado final
 Write-Host ""
@@ -276,9 +281,12 @@ if ($finalSvc -and $finalSvc.Status -eq "Running") {
 }
 Write-Host ""
 Write-Host "  Comandos uteis:" -ForegroundColor White
-Write-Host "  - Status:    .\install.ps1 -Status" -ForegroundColor Gray
-Write-Host "  - Logs:      Get-Content C:\ProgramData\ADLogs\collector.log -Tail 30" -ForegroundColor Gray
-Write-Host "  - Debug:     .\venv\Scripts\python.exe service.py debug" -ForegroundColor Gray
-Write-Host "  - Reiniciar: Restart-Service ADLogsCollector" -ForegroundColor Gray
-Write-Host "  - Remover:   .\install.ps1 -Uninstall" -ForegroundColor Gray
+Write-Host "  - Status:     .\install.ps1 -Status" -ForegroundColor Gray
+Write-Host "  - Monitorar:  .\audit.ps1            (habilitar categorias)" -ForegroundColor Gray
+Write-Host "  - Desmonitor: .\audit.ps1 -Disable   (desabilitar categorias)" -ForegroundColor Gray
+Write-Host "  - Ver estado: .\audit.ps1 -Status" -ForegroundColor Gray
+Write-Host "  - Logs:       Get-Content C:\ProgramData\ADLogs\collector.log -Tail 30" -ForegroundColor Gray
+Write-Host "  - Debug:      .\venv\Scripts\python.exe service.py debug" -ForegroundColor Gray
+Write-Host "  - Reiniciar:  Restart-Service ADLogsCollector" -ForegroundColor Gray
+Write-Host "  - Remover:    .\install.ps1 -Uninstall" -ForegroundColor Gray
 Write-Host "==================================================" -ForegroundColor Cyan
