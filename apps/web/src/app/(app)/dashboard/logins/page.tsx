@@ -72,6 +72,7 @@ export default function LoginsPage() {
   const [to, setTo] = useState('');
   const [serverId, setServerId] = useState('');
   const [servers, setServers] = useState<ServerRecord[]>([]);
+  const [includeBatchService, setIncludeBatchService] = useState(false);
   const [page, setPage] = useState(0);
   const limit = 50;
 
@@ -89,6 +90,7 @@ export default function LoginsPage() {
       if (serverId) params.set('serverId', serverId);
       if (from) params.set('from', new Date(from).toISOString());
       if (to) params.set('to', new Date(to).toISOString());
+      if (includeBatchService) params.set('includeBatchService', 'true');
       params.set('limit', String(limit));
       params.set('offset', String(page * limit));
 
@@ -100,7 +102,7 @@ export default function LoginsPage() {
     } finally {
       setLoading(false);
     }
-  }, [username, sourceIp, success, serverId, from, to, page]);
+  }, [username, sourceIp, success, serverId, from, to, includeBatchService, page]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -162,13 +164,22 @@ export default function LoginsPage() {
               className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="flex gap-2 mt-3">
+          <div className="flex items-center gap-4 mt-3 flex-wrap">
             <button type="submit" className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition">
               <Search className="h-4 w-4" /> Buscar
             </button>
             <button type="button" onClick={() => void load()} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-lg transition">
               <RefreshCw className="h-4 w-4" /> Atualizar
             </button>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeBatchService}
+                onChange={(e) => { setIncludeBatchService(e.target.checked); setPage(0); }}
+                className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+              />
+              <span className="text-sm text-slate-400">Incluir Batch e Servico</span>
+            </label>
           </div>
         </form>
 

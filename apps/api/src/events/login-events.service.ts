@@ -27,6 +27,9 @@ export class LoginEventsService {
         ...(filter.to && { lte: new Date(filter.to) }),
       };
     }
+    if (!filter.includeBatchService) {
+      where.logonType = { notIn: [4, 5] };
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.loginEvent.findMany({

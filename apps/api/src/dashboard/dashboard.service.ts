@@ -45,6 +45,7 @@ export class DashboardService {
         },
       }),
       this.prisma.loginEvent.findMany({
+        where: { logonType: { notIn: [4, 5] } },
         orderBy: { timestamp: 'desc' },
         take: 10,
         select: {

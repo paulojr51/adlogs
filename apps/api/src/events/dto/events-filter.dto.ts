@@ -26,6 +26,9 @@ export class LoginEventsFilterDto {
   success?: boolean;
 
   @IsOptional()
+  includeBatchService?: boolean;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(200)
