@@ -5,6 +5,15 @@ import { Server, Plus, Trash2, Copy, CheckCircle2, Clock, Settings, KeyRound, Al
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
+interface CollectorStatusRecord {
+  id: string;
+  isRunning: boolean;
+  lastSeenAt: string;
+  version: string | null;
+  hostname: string | null;
+  eventsToday: number;
+}
+
 interface ServerRecord {
   id: string;
   name: string;
@@ -15,6 +24,7 @@ interface ServerRecord {
   lastSeenAt: string | null;
   createdAt: string;
   _count?: { loginEvents: number; fileEvents: number };
+  collectorStatus: CollectorStatusRecord | null;
 }
 
 interface ServerConfig {
@@ -41,9 +51,9 @@ interface RotateKeyResponse {
   apiKey: string;
 }
 
-function isOnline(lastSeenAt: string | null): boolean {
-  if (!lastSeenAt) return false;
-  return Date.now() - new Date(lastSeenAt).getTime() < 15 * 60 * 1000;
+function isOnline(collectorStatus: CollectorStatusRecord | null): boolean {
+  if (!collectorStatus) return false;
+  return Date.now() - new Date(collectorStatus.lastSeenAt).getTime() < 10 * 60 * 1000;
 }
 
 function formatRelative(dateStr: string | null): string {
@@ -388,7 +398,7 @@ export default function ServidoresPage() {
           </div>
         ) : (
           servers.map((srv) => {
-            const online = isOnline(srv.lastSeenAt);
+            const online = isOnline(srv.collectorStatus);
             const configOpen = configPanelId === srv.id;
 
             return (
@@ -414,7 +424,7 @@ export default function ServidoresPage() {
                     {!srv.active ? 'Inativo' : online ? 'Online' : 'Offline'}
                   </span>
                   <span className="text-slate-500 text-xs flex items-center gap-1">
-                    <Clock className="h-3 w-3" />{formatRelative(srv.lastSeenAt)}
+                    <Clock className="h-3 w-3" />{formatRelative(srv.collectorStatus?.lastSeenAt ?? null)}
                   </span>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button

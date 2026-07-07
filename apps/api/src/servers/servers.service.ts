@@ -15,13 +15,26 @@ const SAFE_SELECT = {
   updatedAt: true,
 };
 
+const COLLECTOR_STATUS_SELECT = {
+  id: true,
+  isRunning: true,
+  lastSeenAt: true,
+  version: true,
+  hostname: true,
+  eventsToday: true,
+};
+
 @Injectable()
 export class ServersService {
   constructor(private readonly prisma: PrismaService) {}
 
   findAll() {
     return this.prisma.server.findMany({
-      select: { ...SAFE_SELECT, _count: { select: { loginEvents: true, fileEvents: true } } },
+      select: {
+        ...SAFE_SELECT,
+        _count: { select: { loginEvents: true, fileEvents: true } },
+        collectorStatus: { select: COLLECTOR_STATUS_SELECT },
+      },
       orderBy: { name: 'asc' },
     });
   }
