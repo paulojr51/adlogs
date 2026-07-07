@@ -16,6 +16,7 @@ export class AlertCheckerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    void this.runCheck();
     this.timer = setInterval(() => void this.runCheck(), 60_000);
   }
 
@@ -25,9 +26,11 @@ export class AlertCheckerService implements OnModuleInit, OnModuleDestroy {
 
   private async runCheck() {
     const rules = await this.prisma.alertRule.findMany({ where: { enabled: true } });
+    if (rules.length === 0) return;
+    this.logger.debug(`Verificando ${rules.length} regra(s) de alerta`);
     for (const rule of rules) {
       await this.evaluateRule(rule).catch((err: unknown) =>
-        this.logger.error(`Erro ao avaliar regra ${rule.id}: ${String(err)}`),
+        this.logger.error(`Erro ao avaliar regra "${rule.name}": ${String(err)}`),
       );
     }
   }
@@ -38,9 +41,13 @@ export class AlertCheckerService implements OnModuleInit, OnModuleDestroy {
     const recent = await this.prisma.alert.findFirst({
       where: { ruleId: rule.id, triggeredAt: { gte: since } },
     });
-    if (recent) return;
+    if (recent) {
+      this.logger.debug(`Regra "${rule.name}": alerta recente ignorado (cooldown)`);
+      return;
+    }
 
     const count = await this.countEvents(rule, since);
+    this.logger.debug(`Regra "${rule.name}": ${count} evento(s) nos últimos ${rule.windowMinutes}min`);
 
     const triggered =
       rule.condition === 'ANY' ? count > 0 : count >= (rule.threshold ?? 1);
@@ -49,11 +56,15 @@ export class AlertCheckerService implements OnModuleInit, OnModuleDestroy {
     const detail = `${count} evento(s) detectado(s) nos últimos ${rule.windowMinutes} minutos`;
 
     const serverId = rule.serverId ?? (await this.getFirstServerId());
-    if (!serverId) return;
+    if (!serverId) {
+      this.logger.warn(`Regra "${rule.name}": nenhum servidor ativo encontrado`);
+      return;
+    }
 
+    this.logger.log(`Alerta disparado: "${rule.name}" — ${detail}`);
     const alert = await this.alertsService.create({ ruleId: rule.id, serverId, eventCount: count, detail });
 
-    const body = `Alerta: ${rule.name}\n${detail}\nCategoria: ${rule.category}`;
+    const body = `Alerta: ${rule.name}\n${detail}\nCategoria: ${rule.category}\nServidor: ${serverId}`;
     await this.notification.sendEmail(
       rule.emailTo,
       `[ADLogs] Alerta: ${rule.name}`,
