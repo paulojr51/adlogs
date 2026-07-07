@@ -72,7 +72,7 @@ export default function LoginsPage() {
   const [to, setTo] = useState('');
   const [serverId, setServerId] = useState('');
   const [servers, setServers] = useState<ServerRecord[]>([]);
-  const [includeBatchService, setIncludeBatchService] = useState(false);
+  const [includeSystemAccounts, setIncludeSystemAccounts] = useState(false);
   const [page, setPage] = useState(0);
   const limit = 50;
 
@@ -90,7 +90,7 @@ export default function LoginsPage() {
       if (serverId) params.set('serverId', serverId);
       if (from) params.set('from', new Date(from).toISOString());
       if (to) params.set('to', new Date(to).toISOString());
-      if (includeBatchService) params.set('includeBatchService', 'true');
+      if (includeSystemAccounts) params.set('includeSystemAccounts', 'true');
       params.set('limit', String(limit));
       params.set('offset', String(page * limit));
 
@@ -102,7 +102,7 @@ export default function LoginsPage() {
     } finally {
       setLoading(false);
     }
-  }, [username, sourceIp, success, serverId, from, to, includeBatchService, page]);
+  }, [username, sourceIp, success, serverId, from, to, includeSystemAccounts, page]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -174,11 +174,11 @@ export default function LoginsPage() {
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={includeBatchService}
-                onChange={(e) => { setIncludeBatchService(e.target.checked); setPage(0); }}
+                checked={includeSystemAccounts}
+                onChange={(e) => { setIncludeSystemAccounts(e.target.checked); setPage(0); }}
                 className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
               />
-              <span className="text-sm text-slate-400">Incluir Batch e Servico</span>
+              <span className="text-sm text-slate-400">Incluir contas de sistema (DWM, UMFD, SYSTEM...)</span>
             </label>
           </div>
         </form>

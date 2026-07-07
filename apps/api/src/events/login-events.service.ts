@@ -27,8 +27,13 @@ export class LoginEventsService {
         ...(filter.to && { lte: new Date(filter.to) }),
       };
     }
-    if (!filter.includeBatchService) {
+    if (!filter.includeSystemAccounts) {
       where.logonType = { notIn: [4, 5] };
+      where.NOT = [
+        { username: { startsWith: 'DWM-' } },
+        { username: { startsWith: 'UMFD-' } },
+        { username: { in: ['SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE'] } },
+      ];
     }
 
     const [data, total] = await Promise.all([

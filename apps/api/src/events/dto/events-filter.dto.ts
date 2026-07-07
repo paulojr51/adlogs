@@ -26,7 +26,7 @@ export class LoginEventsFilterDto {
   success?: boolean;
 
   @IsOptional()
-  includeBatchService?: boolean;
+  includeSystemAccounts?: boolean;
 
   @IsOptional()
   @IsInt()

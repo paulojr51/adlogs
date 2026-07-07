@@ -45,7 +45,14 @@ export class DashboardService {
         },
       }),
       this.prisma.loginEvent.findMany({
-        where: { logonType: { notIn: [4, 5] } },
+        where: {
+          logonType: { notIn: [4, 5] },
+          NOT: [
+            { username: { startsWith: 'DWM-' } },
+            { username: { startsWith: 'UMFD-' } },
+            { username: { in: ['SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE'] } },
+          ],
+        },
         orderBy: { timestamp: 'desc' },
         take: 10,
         select: {
