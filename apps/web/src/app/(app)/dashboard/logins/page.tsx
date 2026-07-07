@@ -72,12 +72,16 @@ export default function LoginsPage() {
   const [to, setTo] = useState('');
   const [serverId, setServerId] = useState('');
   const [servers, setServers] = useState<ServerRecord[]>([]);
+  const [loadingServers, setLoadingServers] = useState(true);
   const [includeSystemAccounts, setIncludeSystemAccounts] = useState(false);
   const [page, setPage] = useState(0);
   const limit = 50;
 
   useEffect(() => {
-    api.get<ServerRecord[]>('/servers').then(setServers).catch(() => null);
+    api.get<ServerRecord[]>('/servers/names')
+      .then(setServers)
+      .catch((err) => console.error('Erro ao carregar servidores:', err))
+      .finally(() => setLoadingServers(false));
   }, []);
 
   const load = useCallback(async () => {
@@ -144,9 +148,10 @@ export default function LoginsPage() {
             <select
               value={serverId}
               onChange={(e) => setServerId(e.target.value)}
-              className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loadingServers}
+              className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
             >
-              <option value="">Todos os servidores</option>
+              <option value="">{loadingServers ? 'Carregando...' : 'Todos os servidores'}</option>
               {servers.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}

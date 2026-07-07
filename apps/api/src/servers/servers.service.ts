@@ -28,6 +28,14 @@ const COLLECTOR_STATUS_SELECT = {
 export class ServersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  findNames() {
+    return this.prisma.server.findMany({
+      select: { id: true, name: true },
+      where: { active: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   findAll() {
     return this.prisma.server.findMany({
       select: {

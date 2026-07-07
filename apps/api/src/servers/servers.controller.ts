@@ -25,6 +25,12 @@ export class ServersController {
     return this.service.findAll();
   }
 
+  @Get('names')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ANALYST, Role.VIEWER)
+  findNames() {
+    return this.service.findNames();
+  }
+
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.ANALYST, Role.VIEWER)
   findOne(@Param('id') id: string) {
