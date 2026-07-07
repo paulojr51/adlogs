@@ -61,8 +61,9 @@ interface DashboardSummary {
   collectors: CollectorInfo[];
   recentAlerts: RecentAlert[];
   recentLoginEvents: Array<{
-    id: string; username: string; domain?: string; sourceIp?: string;
-    success: boolean; logonTypeName?: string; timestamp: string;
+    id: string; serverId: string; username: string; domain?: string; sourceIp?: string;
+    success: boolean; logonType?: number; logonTypeName?: string; timestamp: string;
+    server: { name: string };
   }>;
   recentFileEvents: Array<{
     id: string; username: string; filePath: string; action: string; timestamp: string;
@@ -91,6 +92,34 @@ function StatCard({
       <p className="text-2xl font-bold text-white">{value}</p>
     </div>
   );
+}
+
+const LOGON_TYPE_LABELS: Record<number, { label: string; color: string }> = {
+  2:  { label: 'Console',      color: 'bg-green-900/40 text-green-400' },
+  3:  { label: 'Rede',         color: 'bg-blue-900/40 text-blue-400' },
+  4:  { label: 'Batch',        color: 'bg-slate-700 text-slate-400' },
+  5:  { label: 'Servico',      color: 'bg-slate-700 text-slate-400' },
+  7:  { label: 'Desbloqueio',  color: 'bg-yellow-900/40 text-yellow-400' },
+  8:  { label: 'Rede',         color: 'bg-blue-900/40 text-blue-400' },
+  10: { label: 'RDP',          color: 'bg-purple-900/40 text-purple-400' },
+  11: { label: 'Console',      color: 'bg-green-900/40 text-green-400' },
+};
+
+function LogonTypeBadge({ logonType, logonTypeName }: { logonType?: number; logonTypeName?: string }) {
+  const info = logonType ? LOGON_TYPE_LABELS[logonType] : null;
+  if (!info && !logonTypeName) return null;
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${info?.color ?? 'bg-slate-700 text-slate-400'}`}>
+      {info?.label ?? logonTypeName}
+    </span>
+  );
+}
+
+function DomainBadge({ domain }: { domain?: string }) {
+  if (!domain) {
+    return <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">Local</span>;
+  }
+  return <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-400 font-medium">{domain}</span>;
 }
 
 const ALERT_CATEGORY_LABELS: Record<string, string> = {
@@ -270,15 +299,17 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-600 text-center py-4">Nenhum evento</p>
               ) : (
                 summary!.recentLoginEvents.map((e) => (
-                  <div key={e.id} className="flex items-center gap-3 py-2 border-b border-slate-800 last:border-0">
+                  <div key={e.id} className="flex items-start gap-3 py-2 border-b border-slate-800 last:border-0">
                     {e.success
-                      ? <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                      : <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />}
+                      ? <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      : <XCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white font-medium truncate">
-                        {e.domain ? `${e.domain}\\` : ''}{e.username}
-                      </p>
-                      <p className="text-xs text-slate-500">{e.sourceIp ?? 'local'}</p>
+                      <p className="text-sm text-white font-medium truncate">{e.username}</p>
+                      <p className="text-xs text-slate-500 truncate">{e.server.name} · {e.sourceIp ?? 'local'}</p>
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        <DomainBadge domain={e.domain} />
+                        <LogonTypeBadge logonType={e.logonType} logonTypeName={e.logonTypeName} />
+                      </div>
                     </div>
                     <span className="text-xs text-slate-600 flex-shrink-0">{formatDate(e.timestamp)}</span>
                   </div>

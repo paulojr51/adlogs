@@ -6,6 +6,34 @@ import { Header } from '@/components/layout/header';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 
+const LOGON_TYPE_LABELS: Record<number, { label: string; color: string }> = {
+  2:  { label: 'Console',      color: 'bg-green-900/40 text-green-400' },
+  3:  { label: 'Rede',         color: 'bg-blue-900/40 text-blue-400' },
+  4:  { label: 'Batch',        color: 'bg-slate-700 text-slate-400' },
+  5:  { label: 'Servico',      color: 'bg-slate-700 text-slate-400' },
+  7:  { label: 'Desbloqueio',  color: 'bg-yellow-900/40 text-yellow-400' },
+  8:  { label: 'Rede',         color: 'bg-blue-900/40 text-blue-400' },
+  10: { label: 'RDP',          color: 'bg-purple-900/40 text-purple-400' },
+  11: { label: 'Console',      color: 'bg-green-900/40 text-green-400' },
+};
+
+function LogonTypeBadge({ logonType, logonTypeName }: { logonType?: number; logonTypeName?: string }) {
+  const info = logonType ? LOGON_TYPE_LABELS[logonType] : null;
+  if (!info && !logonTypeName) return <span className="text-slate-600">—</span>;
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${info?.color ?? 'bg-slate-700 text-slate-400'}`}>
+      {info?.label ?? logonTypeName}
+    </span>
+  );
+}
+
+function DomainBadge({ domain }: { domain?: string }) {
+  if (!domain) {
+    return <span className="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">Local</span>;
+  }
+  return <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-400 font-medium">{domain}</span>;
+}
+
 interface LoginEvent {
   id: string;
   serverId: string;
@@ -178,9 +206,9 @@ export default function LoginsPage() {
                       {servers.find((s) => s.id === e.serverId)?.name ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-white font-medium">{e.username}</td>
-                    <td className="px-4 py-3 text-slate-400">{e.domain ?? '—'}</td>
+                    <td className="px-4 py-3"><DomainBadge domain={e.domain} /></td>
                     <td className="px-4 py-3 text-slate-400 font-mono text-xs">{e.sourceIp ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-400">{e.logonTypeName ?? String(e.logonType ?? '—')}</td>
+                    <td className="px-4 py-3"><LogonTypeBadge logonType={e.logonType} logonTypeName={e.logonTypeName} /></td>
                     <td className="px-4 py-3 text-slate-400">{e.failureReason ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{formatDate(e.timestamp)}</td>
                   </tr>

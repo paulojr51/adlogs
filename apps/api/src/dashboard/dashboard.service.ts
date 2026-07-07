@@ -49,12 +49,15 @@ export class DashboardService {
         take: 10,
         select: {
           id: true,
+          serverId: true,
           username: true,
           domain: true,
           sourceIp: true,
           success: true,
+          logonType: true,
           logonTypeName: true,
           timestamp: true,
+          server: { select: { name: true } },
         },
       }),
       this.prisma.fileEvent.findMany({
