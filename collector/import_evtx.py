@@ -1,9 +1,16 @@
 """
 ADLogs — Importador de logs historicos (.evtx)
 
-Lê arquivos de log do Windows Event Log (.evtx) e importa os eventos
-para o banco de dados do ADLogs. Útil para migração de clientes que
-possuem histórico de logs armazenado em arquivos.
+Lê arquivos do Windows Event Log (.evtx) e envia os eventos para a API do
+ADLogs, que resolve a qual servidor pertencem a partir da X-Server-Key —
+o mesmo caminho usado pelo coletor em tempo real, com a mesma deduplicação.
+
+Serve para dois casos:
+  - migrar clientes com histórico guardado em arquivo;
+  - recuperar o período em que o coletor ficou parado, a partir dos
+    Archive-Security-*.evtx que o Windows gera ao arquivar o log por tamanho.
+
+Requer SERVER_API_KEY configurada no .env do coletor.
 
 Uso:
     # Importar um arquivo específico
@@ -21,14 +28,16 @@ Uso:
 import argparse
 import logging
 import os
+import socket
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Garante diretorio correto e carrega .env antes de importar config
+# Carrega o .env antes de importar config (que lê as variáveis no import).
+# Usa utf-8-sig porque o install.ps1 grava o arquivo com BOM.
 _dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(_dir)
 if _dir not in sys.path:
     sys.path.insert(0, _dir)
 
@@ -43,11 +52,13 @@ if os.path.exists(_env_path):
 
 import win32evtlog  # type: ignore[import]
 
-from config import LOGIN_EVENT_IDS, FILE_EVENT_IDS, LOGON_TYPES, DB_URL, WINDOWS_MSG_TO_ACTION
-from db_writer import insert_login_events, insert_file_events
+from config import (
+    API_URL, FILE_EVENT_IDS, LOGIN_EVENT_IDS, LOGON_TYPES,
+    SERVER_API_KEY, WINDOWS_MSG_TO_ACTION,
+)
+from api_writer import SubmissionError, submit_file_events, submit_login_events
 from event_reader import _clean_ip, _access_mask_to_action
 
-import socket
 HOSTNAME = socket.gethostname()
 
 logging.basicConfig(
@@ -56,7 +67,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger('adlogs.import')
 
-BATCH_SIZE = 500  # Insere em lotes para não sobrecarregar o banco
+BATCH_SIZE = 500          # Envia em lotes para não estourar o timeout da API
+MAX_TENTATIVAS = 3        # Reenvios antes de abortar um lote
+ESPERA_ENTRE_TENTATIVAS = 5
+
+
+def validar_configuracao() -> None:
+    """Falha cedo se o importador não consegue identificar o servidor.
+
+    Os eventos são enviados pela API, que resolve o servidor a partir da
+    X-Server-Key. Sem a chave não há para onde importar — melhor abortar aqui
+    do que descobrir depois de ler 1 GB de log.
+    """
+    if not SERVER_API_KEY:
+        logger.error(
+            'SERVER_API_KEY nao configurada. Gere a chave no painel de Servidores '
+            'e informe-a no .env do coletor antes de importar.'
+        )
+        sys.exit(1)
 
 
 # ─── Leitura de arquivo .evtx ────────────────────────────────────────────────
@@ -308,22 +336,50 @@ def find_evtx_files(path: str) -> list[str]:
 
 # ─── Importacao em lotes ─────────────────────────────────────────────────────
 
-def import_in_batches(events: list[dict], insert_fn, label: str, simulate: bool) -> int:
-    """Insere eventos em lotes, retorna total inserido."""
+def import_in_batches(events: list[dict], submit_fn, label: str, simulate: bool) -> int:
+    """Envia eventos em lotes e retorna o total confirmado pela API.
+
+    Levanta SubmissionError se um lote não puder ser entregue. Isso é
+    deliberado: numa recuperação de histórico, um lote perdido no meio do
+    caminho não pode se confundir com "eram todos duplicados".
+    """
     if not events:
         return 0
+
     total = 0
     for i in range(0, len(events), BATCH_SIZE):
         batch = events[i:i + BATCH_SIZE]
         if simulate:
             total += len(batch)
         else:
-            inserted = insert_fn(batch)
-            total += inserted
-        pct = min(i + BATCH_SIZE, len(events))
-        print(f'  {label}: {pct}/{len(events)} processados, {total} inseridos...', end='\r')
+            total += _submit_com_retry(batch, submit_fn, label, i)
+        processados = min(i + BATCH_SIZE, len(events))
+        print(f'  {label}: {processados}/{len(events)} processados, {total} inseridos...', end='\r')
     print()
     return total
+
+
+def _submit_com_retry(batch: list[dict], submit_fn, label: str, offset: int) -> int:
+    """Envia um lote, com reenvios, antes de desistir."""
+    ultimo_erro: Exception | None = None
+
+    for tentativa in range(1, MAX_TENTATIVAS + 1):
+        try:
+            return submit_fn(batch)
+        except SubmissionError as exc:
+            ultimo_erro = exc
+            logger.warning(
+                '%s: lote a partir do evento %d falhou (tentativa %d/%d): %s',
+                label, offset, tentativa, MAX_TENTATIVAS, exc,
+            )
+            if tentativa < MAX_TENTATIVAS:
+                time.sleep(ESPERA_ENTRE_TENTATIVAS)
+
+    raise SubmissionError(
+        f'{label}: lote a partir do evento {offset} nao foi enviado apos '
+        f'{MAX_TENTATIVAS} tentativas. A importacao parou aqui — nada alem '
+        f'deste ponto foi gravado. Ultimo erro: {ultimo_erro}'
+    )
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -355,6 +411,9 @@ def main():
             logger.error('Data invalida. Use o formato YYYY-MM-DD (ex: 2025-01-01)')
             sys.exit(1)
 
+    if not args.simular:
+        validar_configuracao()
+
     files = find_evtx_files(args.path)
 
     print()
@@ -362,6 +421,7 @@ def main():
     print('  ADLogs — Importador de Logs Historicos')
     print('=' * 60)
     print(f'  Arquivos encontrados : {len(files)}')
+    print(f'  Destino              : {API_URL}')
     if since:
         print(f'  Importar desde       : {since.strftime("%d/%m/%Y")}')
     if args.simular:
@@ -383,12 +443,22 @@ def main():
         total_file += len(file_events)
 
         if login_events:
-            n = import_in_batches(login_events, insert_login_events, 'Login', args.simular)
+            n = import_in_batches(
+                login_events,
+                lambda lote: submit_login_events(lote, API_URL, SERVER_API_KEY),
+                'Login',
+                args.simular,
+            )
             total_login_inserted += n
             print(f'  Login events: {len(login_events)} lidos, {n} inseridos')
 
         if file_events:
-            n = import_in_batches(file_events, insert_file_events, 'Arquivo', args.simular)
+            n = import_in_batches(
+                file_events,
+                lambda lote: submit_file_events(lote, API_URL, SERVER_API_KEY),
+                'Arquivo',
+                args.simular,
+            )
             total_file_inserted += n
             print(f'  File events : {len(file_events)} lidos, {n} inseridos')
 
@@ -410,4 +480,16 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SubmissionError as exc:
+        print()
+        print('=' * 60)
+        print('  IMPORTACAO INTERROMPIDA')
+        print('=' * 60)
+        print(f'  {exc}')
+        print()
+        print('  Os eventos ja confirmados continuam no banco. Corrija a causa')
+        print('  e rode de novo: o que ja entrou e' + chr(39) + ' deduplicado.')
+        print('=' * 60)
+        sys.exit(1)

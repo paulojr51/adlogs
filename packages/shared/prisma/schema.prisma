@@ -311,6 +311,10 @@ model CollectorStatus {
   server       Server   @relation(fields: [serverId], references: [id])
   isRunning    Boolean  @map("is_running")
   lastSeenAt   DateTime @map("last_seen_at")
+  // Horário do evento mais recente que o coletor conseguiu entregar.
+  // Distingue "processo vivo" (lastSeenAt) de "coletando de fato": um coletor
+  // com a leitura travada continua enviando heartbeat, mas este campo congela.
+  lastEventAt  DateTime? @map("last_event_at")
   version      String?
   hostname     String?
   eventsToday  Int      @default(0) @map("events_today")

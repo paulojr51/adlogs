@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { withCollectorHealth } from '../collector/collector-health';
 
 @Injectable()
 export class DashboardService {
@@ -81,8 +82,6 @@ export class DashboardService {
       }),
     ]);
 
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-
     return {
       today: {
         logins: totalLoginToday,
@@ -92,10 +91,7 @@ export class DashboardService {
         accountEvents: totalAccountToday,
         sqlEvents: totalSqlToday,
       },
-      collectors: collectors.map((c) => ({
-        ...c,
-        isRunning: c.lastSeenAt > tenMinutesAgo,
-      })),
+      collectors: collectors.map((c) => withCollectorHealth(c)),
       recentAlerts,
       recentLoginEvents,
       recentFileEvents,

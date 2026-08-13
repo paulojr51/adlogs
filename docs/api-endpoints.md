@@ -175,6 +175,44 @@ Requer role `ADMIN` ou `SUPER_ADMIN`.
 | POST | `/collector/events/process` | Batch de process events | 🔑 |
 | GET | `/collector/status` | Status de todos os coletores | VIEWER |
 
+### POST /collector/heartbeat (body)
+```json
+{
+  "version": "2.1.0",
+  "hostname": "WIN-SRV-01",
+  "eventsToday": 152,
+  "loginToday": 90,
+  "fileToday": 40,
+  "processToday": 12,
+  "accountToday": 6,
+  "sqlToday": 4,
+  "lastEventAt": "2026-08-13T10:00:00.000Z"
+}
+```
+
+`lastEventAt` (opcional) é o horário do evento mais recente que o coletor
+conseguiu **entregar**. Coletores anteriores à correção não enviam o campo; a
+API preserva o último valor conhecido em vez de sobrescrevê-lo com vazio.
+
+### GET /collector/status (resposta)
+
+Cada item traz dois indicadores distintos:
+
+| Campo | Origem | Significado |
+|-------|--------|-------------|
+| `isRunning` | `lastSeenAt` < 10 min | O processo do coletor está vivo |
+| `isCollecting` | `lastEventAt` < 24 h | Está entregando eventos |
+
+`isCollecting` é `null` quando não se pode afirmar nada — coletor offline, ou
+versão antiga que não reporta `lastEventAt`. **`null` nunca deve ser exibido
+como falha de coleta.**
+
+Os dois são necessários porque o heartbeat é enviado a cada ciclo,
+independentemente do resultado da leitura do Event Log: um coletor com a leitura
+travada permanece `isRunning: true` indefinidamente. O mesmo cálculo alimenta
+`GET /dashboard/summary` (via `collector-health.ts`), para que as duas telas
+nunca discordem sobre o mesmo servidor.
+
 ### POST /collector/events/login (body)
 ```json
 {

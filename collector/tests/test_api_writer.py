@@ -70,17 +70,53 @@ class TestSubmitLoginEvents:
         result = api_writer.submit_login_events([], 'http://api:3001', 'adlogs_key')
         assert result == 0
 
-    def test_deve_retornar_zero_em_erro_de_api(self):
+    def test_deve_levantar_excecao_em_erro_de_api(self):
+        """Falha de envio NAO pode virar 0 silencioso — o coletor precisa
+        distinguir 'nada inserido' de 'nao consegui enviar' para nao avancar
+        o checkpoint por cima de eventos que nunca chegaram ao banco."""
         import sys
         sys.path.insert(0, 'C:/projetos/adlogs/collector')
         import api_writer
 
         with patch('api_writer.requests.post', side_effect=Exception('timeout')):
+            with pytest.raises(api_writer.SubmissionError):
+                api_writer.submit_login_events(
+                    [_make_login_event()], 'http://api:3001', 'adlogs_key'
+                )
+
+    def test_deve_retornar_zero_sem_erro_quando_todos_duplicados(self):
+        """Envio bem-sucedido com 0 inseridos (todos duplicados) e sucesso,
+        nao falha — o checkpoint deve avancar normalmente."""
+        import sys
+        sys.path.insert(0, 'C:/projetos/adlogs/collector')
+        import api_writer
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {'inserted': 0}
+
+        with patch('api_writer.requests.post', return_value=mock_resp):
             result = api_writer.submit_login_events(
                 [_make_login_event()], 'http://api:3001', 'adlogs_key'
             )
 
         assert result == 0
+
+    def test_deve_levantar_excecao_em_status_http_de_erro(self):
+        import sys
+        sys.path.insert(0, 'C:/projetos/adlogs/collector')
+        import api_writer
+        import requests
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_resp.raise_for_status.side_effect = requests.HTTPError('401 Unauthorized')
+
+        with patch('api_writer.requests.post', return_value=mock_resp):
+            with pytest.raises(api_writer.SubmissionError):
+                api_writer.submit_login_events(
+                    [_make_login_event()], 'http://api:3001', 'adlogs_key'
+                )
 
 
 class TestSubmitProcessEvents:
@@ -103,4 +139,5 @@ class TestSubmitProcessEvents:
         assert result == 1
         call_kwargs = mock_post.call_args
         payload = call_kwargs[1]['json']
-        assert payload['events'][0]['process_name'] == 'powershell.exe'
+        # A API recebe camelCase (ver CollectorService DTOs)
+        assert payload['events'][0]['processName'] == 'powershell.exe'

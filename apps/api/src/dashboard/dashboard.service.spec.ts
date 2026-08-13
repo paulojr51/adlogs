@@ -107,6 +107,30 @@ describe('DashboardService', () => {
       expect(result.collectors[0].server.name).toBe('Servidor Principal');
     });
 
+    it('deve sinalizar coleta parada quando o coletor esta vivo mas nao entrega eventos', async () => {
+      // Mesmo criterio do endpoint de status: heartbeat recente nao significa
+      // que a ingestao esta funcionando.
+      (prisma.collectorStatus.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          ...mockCollectorStatuses[0],
+          lastSeenAt: new Date(),
+          lastEventAt: new Date('2026-07-21T08:00:00Z'),
+        },
+      ]);
+
+      const result = await service.getSummary();
+
+      expect(result.collectors[0].isRunning).toBe(true);
+      expect(result.collectors[0].isCollecting).toBe(false);
+    });
+
+    it('deve reportar coleta desconhecida quando o coletor nao informa lastEventAt', async () => {
+      const result = await service.getSummary();
+
+      expect(result.collectors[0].isRunning).toBe(true);
+      expect(result.collectors[0].isCollecting).toBeNull();
+    });
+
     it('deve retornar alertas recentes', async () => {
       const result = await service.getSummary();
 

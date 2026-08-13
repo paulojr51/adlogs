@@ -129,6 +129,7 @@ servers ────────────────────────
 | server_id | string | FK → servers.id (UNIQUE — um registro por servidor) |
 | is_running | boolean | Coletor online? |
 | last_seen_at | datetime | Último heartbeat |
+| last_event_at | datetime? | Evento mais recente que o coletor conseguiu entregar |
 | version | string? | Versão do coletor |
 | hostname | string? | Nome do servidor reportado pelo coletor |
 | events_today | int | Total de eventos hoje |
@@ -136,6 +137,26 @@ servers ────────────────────────
 | file_today | int | File events hoje |
 | process_today | int | Process events hoje |
 | updated_at | datetime | Última atualização |
+
+**`last_seen_at` vs `last_event_at` — não confundir.** `last_seen_at` só diz que o
+processo do coletor está vivo: o heartbeat é enviado a cada ciclo,
+independentemente de a leitura do Event Log ter funcionado. `last_event_at` diz
+até onde a coleta realmente chegou. Quando o primeiro avança e o segundo
+congela, a ingestão parou — e foi essa distinção que faltava quando um coletor
+ficou 23 dias "online" no dashboard sem gravar um único evento.
+
+A API expõe os dois como `isRunning` e `isCollecting`. `isCollecting` é `null`
+(desconhecido, nunca "falha") quando o coletor está offline ou quando é uma
+versão antiga que não reporta `last_event_at`.
+
+**Deduplicação de eventos.** Não há constraint `UNIQUE` nas tabelas de evento —
+o `skipDuplicates` do Prisma é inócuo aqui, e a deduplicação real acontece na
+aplicação. A chave é `(server_id, windows_record_id, timestamp)`. O `timestamp`
+é indispensável: o `RecordNumber` do Windows **reinicia em 1** quando o Security
+log é limpo ou arquivado por tamanho, então deduplicar só pelo par
+`(server_id, windows_record_id)` faria eventos novos legítimos colidirem com
+antigos e serem descartados em silêncio — além de inviabilizar a reimportação de
+arquivos `.evtx` históricos.
 
 ### system_audit
 | Campo | Tipo | Descrição |

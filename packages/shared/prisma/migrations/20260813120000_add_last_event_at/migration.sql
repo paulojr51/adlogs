@@ -1,0 +1,13 @@
+-- Distingue "coletor vivo" de "coletor coletando".
+--
+-- Ate aqui o dashboard so tinha last_seen_at, alimentado pelo heartbeat. Como o
+-- heartbeat e' enviado independentemente do resultado da coleta, um coletor com
+-- a leitura do Event Log travada aparecia como ativo indefinidamente.
+--
+-- last_event_at guarda o horario do evento mais recente que o coletor conseguiu
+-- entregar. Se a coleta para, este campo congela enquanto last_seen_at continua
+-- avancando — e a diferenca entre os dois torna a falha visivel.
+--
+-- Aditiva e anulavel: nao reescreve linhas existentes e nao afeta os eventos.
+-- Coletores que ainda nao enviam o campo mantem NULL (coleta "desconhecida").
+ALTER TABLE "collector_status" ADD COLUMN "last_event_at" TIMESTAMP(3);

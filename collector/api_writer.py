@@ -16,6 +16,16 @@ logger = logging.getLogger('adlogs.api_writer')
 _TIMEOUT = 60
 
 
+class SubmissionError(Exception):
+    """Falha ao enviar eventos para a API.
+
+    Levantada — e nunca convertida em 0 — para que o coletor consiga
+    distinguir 'a API aceitou e nada era novo' de 'nao consegui enviar'.
+    Sem essa distincao o checkpoint avanca por cima de eventos que nunca
+    chegaram ao banco, perdendo-os permanentemente.
+    """
+
+
 def _snake_to_camel(name: str) -> str:
     return re.sub(r'_([a-z])', lambda m: m.group(1).upper(), name)
 
@@ -52,7 +62,9 @@ def _post_batch(
         return resp.json().get('inserted', 0)
     except Exception as exc:
         logger.error('Falha ao submeter %s (%d eventos): %s', endpoint, len(events), exc)
-        return 0
+        raise SubmissionError(
+            f'{endpoint}: {len(events)} eventos nao enviados — {exc}'
+        ) from exc
 
 
 def submit_login_events(events: list[dict[str, Any]], api_url: str, api_key: str) -> int:

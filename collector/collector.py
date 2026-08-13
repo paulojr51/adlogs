@@ -16,10 +16,12 @@ import requests
 
 from config import API_URL, COLLECTOR_VERSION, POLL_INTERVAL, SERVER_API_KEY
 from api_writer import (
+    SubmissionError,
     submit_login_events, submit_file_events, submit_process_events,
     submit_account_events, submit_sql_events,
 )
 from event_reader import EventReader
+import state
 
 logger = logging.getLogger('adlogs.collector')
 
@@ -27,22 +29,17 @@ logger = logging.getLogger('adlogs.collector')
 class Collector:
     """Gerencia o ciclo de coleta e submissão para a API central."""
 
-    def __init__(self):
+    def __init__(self, state_path: str | None = None):
         self.reader = EventReader()
         self.hostname = socket.gethostname()
         self.running = False
-        self._last_login_record_id: int | None = None
-        self._last_file_record_id: int | None = None
-        self._last_process_record_id: int | None = None
-        self._last_account_record_id: int | None = None
-        self._last_sql_record_id: int | None = None
+        self._state_path = state_path or state.STATE_PATH
+        # Marca d'água por categoria, retomada do disco — sobrevive a reinício
+        # do serviço e ao reset do RecordNumber do Windows.
+        self._state = state.load_state(self._state_path)
         self._monitored_folders: list[str] = []
         self._events_today = 0
-        self._login_today = 0
-        self._file_today = 0
-        self._process_today = 0
-        self._account_today = 0
-        self._sql_today = 0
+        self._today: dict[str, int] = {kind: 0 for kind in state.KINDS}
         self._last_day: int | None = None
         self._headers = {'X-Server-Key': SERVER_API_KEY}
         # Flags de coleta — carregados de /collector/config
@@ -79,86 +76,125 @@ class Collector:
         self.running = False
 
     def _collect(self):
-        """Um ciclo de coleta e submissão."""
-        if self._collect_logins:
-            try:
-                login_events = self.reader.read_login_events(self._last_login_record_id)
-                if login_events:
-                    inserted = submit_login_events(login_events, API_URL, SERVER_API_KEY)
-                    self._login_today += inserted
-                    self._events_today += inserted
-                    self._last_login_record_id = int(login_events[0].get('windows_record_id', 0) or 0)
-                    logger.info('Login events: %d lidos, %d inseridos', len(login_events), inserted)
-            except Exception as exc:
-                logger.error('Erro ao coletar login events: %s', exc)
+        """Um ciclo de coleta e submissão, uma categoria por vez."""
+        self._collect_kind(
+            'login',
+            self._collect_logins,
+            self.reader.read_login_events,
+            submit_login_events,
+        )
+        self._collect_kind(
+            'file',
+            self._collect_files and bool(self._monitored_folders),
+            lambda rid, ts: self.reader.read_file_events(self._monitored_folders, rid, ts),
+            submit_file_events,
+        )
+        self._collect_kind(
+            'process',
+            self._collect_processes,
+            self.reader.read_process_events,
+            submit_process_events,
+        )
+        self._collect_kind(
+            'account',
+            self._collect_accounts,
+            self.reader.read_account_events,
+            submit_account_events,
+        )
+        self._collect_kind(
+            'sql',
+            self._collect_sql,
+            self.reader.read_sql_events,
+            submit_sql_events,
+        )
 
-        if self._collect_files and self._monitored_folders:
-            try:
-                file_events = self.reader.read_file_events(
-                    self._monitored_folders, self._last_file_record_id
-                )
-                if file_events:
-                    inserted = submit_file_events(file_events, API_URL, SERVER_API_KEY)
-                    self._file_today += inserted
-                    self._events_today += inserted
-                    self._last_file_record_id = int(file_events[0].get('windows_record_id', 0) or 0)
-                    logger.info('File events: %d lidos, %d inseridos', len(file_events), inserted)
-            except Exception as exc:
-                logger.error('Erro ao coletar file events: %s', exc)
+    def _collect_kind(self, kind: str, enabled: bool, read_fn, submit_fn) -> None:
+        """Lê, submete e avança a marca d'água de uma categoria de evento.
 
-        if self._collect_processes:
-            try:
-                process_events = self.reader.read_process_events(self._last_process_record_id)
-                if process_events:
-                    inserted = submit_process_events(process_events, API_URL, SERVER_API_KEY)
-                    self._process_today += inserted
-                    self._events_today += inserted
-                    self._last_process_record_id = int(process_events[0].get('windows_record_id', 0) or 0)
-                    logger.info('Process events: %d lidos, %d inseridos', len(process_events), inserted)
-            except Exception as exc:
-                logger.error('Erro ao coletar process events: %s', exc)
+        A ordem aqui é deliberada: a marca d'água só avança DEPOIS que o envio
+        retorna sem erro. `submit_fn` levanta SubmissionError quando não
+        conseguiu entregar — nesse caso a exceção sobe até o except abaixo e a
+        marca d'água fica onde estava, para reler os mesmos eventos no próximo
+        ciclo. Avançar antes da confirmação perde eventos para sempre.
+        """
+        if not enabled:
+            return
 
-        if self._collect_accounts:
-            try:
-                account_events = self.reader.read_account_events(self._last_account_record_id)
-                if account_events:
-                    inserted = submit_account_events(account_events, API_URL, SERVER_API_KEY)
-                    self._account_today += inserted
-                    self._events_today += inserted
-                    self._last_account_record_id = int(account_events[0].get('windows_record_id', 0) or 0)
-                    logger.info('Account events: %d lidos, %d inseridos', len(account_events), inserted)
-            except Exception as exc:
-                logger.error('Erro ao coletar account events: %s', exc)
+        try:
+            last_record_id, last_timestamp = state.get_watermark(self._state, kind)
+            events = read_fn(last_record_id, last_timestamp)
+            if not events:
+                return
 
-        if self._collect_sql:
-            try:
-                sql_events = self.reader.read_sql_events(self._last_sql_record_id)
-                if sql_events:
-                    inserted = submit_sql_events(sql_events, API_URL, SERVER_API_KEY)
-                    self._sql_today += inserted
-                    self._events_today += inserted
-                    self._last_sql_record_id = int(sql_events[0].get('windows_record_id', 0) or 0)
-                    logger.info('SQL events: %d lidos, %d inseridos', len(sql_events), inserted)
-            except Exception as exc:
-                logger.error('Erro ao coletar SQL events: %s', exc)
+            inserted = submit_fn(events, API_URL, SERVER_API_KEY)
+
+            self._advance_watermark(kind, events)
+            self._today[kind] += inserted
+            self._events_today += inserted
+            logger.info('%s events: %d lidos, %d inseridos', kind, len(events), inserted)
+        except Exception as exc:
+            logger.error('Erro ao coletar %s events: %s', kind, exc)
+
+    def _advance_watermark(self, kind: str, events: list[dict]) -> None:
+        """Move a marca d'água para o evento mais recente do lote e persiste.
+
+        A leitura é retroativa (do mais novo ao mais antigo), então events[0]
+        é o mais recente. Guardamos também o timestamp: é ele que sustenta a
+        retomada quando o Windows reinicia a contagem de RecordNumber.
+        """
+        newest = events[0]
+
+        try:
+            record_id = int(newest.get('windows_record_id', 0) or 0)
+        except (TypeError, ValueError):
+            record_id = None
+
+        timestamp = newest.get('timestamp')
+        if not isinstance(timestamp, datetime):
+            timestamp = None
+
+        state.set_watermark(self._state, kind, record_id, timestamp)
+        state.save_state(self._state, self._state_path)
+
+    def _last_event_at(self) -> datetime | None:
+        """Evento mais recente já entregue, considerando todas as categorias.
+
+        É o que permite ao dashboard separar "processo vivo" de "coletando":
+        se a leitura travar, este valor congela enquanto o heartbeat continua.
+        """
+        timestamps = [
+            ts
+            for ts in (state.get_watermark(self._state, kind)[1] for kind in state.KINDS)
+            if ts is not None
+        ]
+        return max(timestamps) if timestamps else None
 
     def _heartbeat(self):
         """Envia heartbeat para a API."""
         if not SERVER_API_KEY:
             return
+
+        payload = {
+            'version': COLLECTOR_VERSION,
+            'hostname': self.hostname,
+            'eventsToday': self._events_today,
+            'loginToday': self._today['login'],
+            'fileToday': self._today['file'],
+            'processToday': self._today['process'],
+            'accountToday': self._today['account'],
+            'sqlToday': self._today['sql'],
+        }
+
+        # Omitido quando nada foi coletado ainda: a API preserva o último valor
+        # conhecido em vez de sobrescrevê-lo com vazio.
+        ultimo_evento = self._last_event_at()
+        if ultimo_evento is not None:
+            payload['lastEventAt'] = ultimo_evento.isoformat()
+
         try:
             requests.post(
                 f'{API_URL}/api/collector/heartbeat',
-                json={
-                    'version': COLLECTOR_VERSION,
-                    'hostname': self.hostname,
-                    'eventsToday': self._events_today,
-                    'loginToday': self._login_today,
-                    'fileToday': self._file_today,
-                    'processToday': self._process_today,
-                    'accountToday': self._account_today,
-                    'sqlToday': self._sql_today,
-                },
+                json=payload,
                 headers=self._headers,
                 timeout=5,
             )
@@ -200,10 +236,7 @@ class Collector:
             self._last_day = today
         elif today != self._last_day:
             self._events_today = 0
-            self._login_today = 0
-            self._file_today = 0
-            self._process_today = 0
-            self._account_today = 0
-            self._sql_today = 0
+            for kind in self._today:
+                self._today[kind] = 0
             self._last_day = today
             self._fetch_config()

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
 import type { Server } from '@adlogs/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { withCollectorHealth } from './collector-health';
 
 export class UpdateConfigDto {
   @IsOptional() @IsBoolean() collectLogins?: boolean;
@@ -35,7 +36,16 @@ export class CollectorHeartbeatDto {
 
   @IsNumber()
   sqlToday!: number;
+
+  /**
+   * Horário do evento mais recente que o coletor conseguiu entregar.
+   * Opcional: coletores anteriores à correção não enviam este campo.
+   */
+  @IsOptional()
+  @IsString()
+  lastEventAt?: string;
 }
+
 
 export interface LoginEventInput {
   windowsEventId: number;
@@ -69,33 +79,30 @@ export class CollectorService {
   constructor(private readonly prisma: PrismaService) {}
 
   async heartbeat(server: Server, data: CollectorHeartbeatDto) {
+    const common = {
+      isRunning: true,
+      lastSeenAt: new Date(),
+      version: data.version,
+      hostname: data.hostname,
+      eventsToday: data.eventsToday,
+      loginToday: data.loginToday,
+      fileToday: data.fileToday,
+      processToday: data.processToday,
+      accountToday: data.accountToday,
+      sqlToday: data.sqlToday,
+    };
+
+    // Só grava lastEventAt quando o coletor informa. Coletores anteriores à
+    // correção omitem o campo — sobrescrever com null apagaria a última
+    // referência conhecida de coleta.
+    const lastEvent = data.lastEventAt
+      ? { lastEventAt: new Date(data.lastEventAt) }
+      : {};
+
     return this.prisma.collectorStatus.upsert({
       where: { serverId: server.id },
-      update: {
-        isRunning: true,
-        lastSeenAt: new Date(),
-        version: data.version,
-        hostname: data.hostname,
-        eventsToday: data.eventsToday,
-        loginToday: data.loginToday,
-        fileToday: data.fileToday,
-        processToday: data.processToday,
-        accountToday: data.accountToday,
-        sqlToday: data.sqlToday,
-      },
-      create: {
-        serverId: server.id,
-        isRunning: true,
-        lastSeenAt: new Date(),
-        version: data.version,
-        hostname: data.hostname,
-        eventsToday: data.eventsToday,
-        loginToday: data.loginToday,
-        fileToday: data.fileToday,
-        processToday: data.processToday,
-        accountToday: data.accountToday,
-        sqlToday: data.sqlToday,
-      },
+      update: { ...common, ...lastEvent },
+      create: { serverId: server.id, ...common, ...lastEvent },
     });
   }
 
@@ -106,11 +113,7 @@ export class CollectorService {
       orderBy: { lastSeenAt: 'desc' },
     });
 
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    return statuses.map((s) => ({
-      ...s,
-      isRunning: s.lastSeenAt > tenMinutesAgo,
-    }));
+    return statuses.map((s) => withCollectorHealth(s));
   }
 
   async updateConfig(serverId: string, dto: UpdateConfigDto) {
@@ -161,19 +164,23 @@ export class CollectorService {
       .map((e) => e.windowsRecordId)
       .filter((r): r is string => typeof r === 'string');
 
-    const existingIds = new Set<string>();
+    const existingKeys = new Set<string>();
     if (recordIds.length > 0) {
       const existing = await this.prisma.loginEvent.findMany({
         where: { serverId, windowsRecordId: { in: recordIds } },
-        select: { windowsRecordId: true },
+        select: { windowsRecordId: true, timestamp: true },
       });
       existing.forEach((e) => {
-        if (e.windowsRecordId) existingIds.add(e.windowsRecordId);
+        if (e.windowsRecordId) {
+          existingKeys.add(this._dedupKey(e.windowsRecordId, e.timestamp));
+        }
       });
     }
 
     const toInsert = events.filter(
-      (e) => !e.windowsRecordId || !existingIds.has(e.windowsRecordId),
+      (e) =>
+        !e.windowsRecordId ||
+        !existingKeys.has(this._dedupKey(e.windowsRecordId, e.timestamp)),
     );
     if (toInsert.length === 0) return { inserted: 0 };
 
@@ -205,19 +212,23 @@ export class CollectorService {
       .map((e) => e.windowsRecordId)
       .filter((r): r is string => typeof r === 'string');
 
-    const existingIds = new Set<string>();
+    const existingKeys = new Set<string>();
     if (recordIds.length > 0) {
       const existing = await this.prisma.fileEvent.findMany({
         where: { serverId, windowsRecordId: { in: recordIds } },
-        select: { windowsRecordId: true },
+        select: { windowsRecordId: true, timestamp: true },
       });
       existing.forEach((e) => {
-        if (e.windowsRecordId) existingIds.add(e.windowsRecordId);
+        if (e.windowsRecordId) {
+          existingKeys.add(this._dedupKey(e.windowsRecordId, e.timestamp));
+        }
       });
     }
 
     const toInsert = events.filter(
-      (e) => !e.windowsRecordId || !existingIds.has(e.windowsRecordId),
+      (e) =>
+        !e.windowsRecordId ||
+        !existingKeys.has(this._dedupKey(e.windowsRecordId, e.timestamp)),
     );
     if (toInsert.length === 0) return { inserted: 0 };
 
@@ -239,5 +250,22 @@ export class CollectorService {
     });
 
     return { inserted: result.count };
+  }
+
+  /**
+   * Chave de deduplicação de eventos do Windows.
+   *
+   * O RecordNumber do Event Log NÃO é estável ao longo do tempo: quando o log é
+   * limpo ou arquivado por tamanho (AutoBackupLogFiles), o Windows reinicia a
+   * contagem em 1. Deduplicar só por windowsRecordId faria eventos novos
+   * legítimos colidirem com eventos antigos e serem descartados em silêncio —
+   * e quebraria a reimportação de arquivos .evtx históricos.
+   *
+   * O timestamp desempata: o mesmo servidor não gera dois eventos distintos
+   * com o mesmo RecordNumber no mesmo instante.
+   */
+  private _dedupKey(recordId: string, timestamp: Date | string): string {
+    const ts = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    return `${recordId}|${ts.toISOString()}`;
   }
 }

@@ -35,7 +35,8 @@ Coletor Python (no servidor remoto)
            │
            ├── POST /api/collector/heartbeat
            │   Headers: { X-Server-Key: "adlogs_<random_hex>" }
-           │   Body:    { version, hostname, eventsToday, loginToday, fileToday, processToday }
+           │   Body:    { version, hostname, eventsToday, loginToday, fileToday,
+           │              processToday, lastEventAt? }
            │
            └── GET /api/collector/config
                Headers: { X-Server-Key: "adlogs_<random_hex>" }
@@ -76,10 +77,54 @@ collector.py (a cada POLL_INTERVAL segundos)
            │
            ├── POST /api/collector/heartbeat
            │   ← upsert CollectorStatus WHERE serverId = server.id
+           │   ← lastEventAt = max(marca d'água de todas as categorias)
            │
            └── GET /api/collector/config
                ← { monitoredFolders: [...] }  (global + deste servidor)
 ```
+
+⚠️ **O heartbeat é enviado a cada ciclo, mesmo quando a coleta falha.** Ele vive
+num `try` separado do `_collect()`, e cada categoria trata os próprios erros
+apenas logando. Por isso um coletor com a leitura do Event Log travada continua
+reportando presença indefinidamente.
+
+É por isso que o heartbeat carrega `lastEventAt`: é o único campo que congela
+quando a ingestão para, e é o que sustenta o `isCollecting` no dashboard.
+
+## 4.1. Marca d'água de leitura (anti-perda de eventos)
+
+```
+Início do ciclo
+   │
+   ├── state.get_watermark(kind) ── lê %PROGRAMDATA%\ADLogs\state.json
+   │        (record_id, timestamp)
+   │
+   ├── reader.read_*_events(record_id, timestamp)
+   │        └── para quando timestamp do registro < marca d'água
+   │            (o RecordNumber é só fallback — ele reinicia)
+   │
+   ├── submit_*_events(...) ──► SubmissionError se não entregou
+   │                                     │
+   │                                     └── marca d'água NÃO avança,
+   │                                         mesmos eventos relidos no
+   │                                         próximo ciclo
+   │
+   └── sucesso ──► set_watermark(kind, mais recente) + grava em disco
+```
+
+Três propriedades que essa ordem garante:
+
+1. **Falha de envio não perde evento.** A marca d'água só avança depois da
+   confirmação. Antes, `_post_batch` engolia a exceção e devolvia `0`, e o
+   ponteiro avançava por cima de eventos que nunca chegaram ao banco.
+2. **Reinício do serviço não perde posição.** O estado é persistido em disco;
+   antes vivia só em memória, e reiniciar fazia o coletor reler apenas os
+   últimos N eventos, pulando o acumulado durante a parada.
+3. **Reset do RecordNumber não trava a coleta.** Quando o Security log é limpo
+   ou arquivado por tamanho (`AutoBackupLogFiles`), o `RecordNumber` volta a 1.
+   Parar a leitura por `record_number <= last_record_id` descartava todo evento
+   novo indefinidamente. O `timestamp` nunca reinicia, então é ele a referência
+   primária — e o recuo do RecordNumber é registrado como `WARNING`.
 
 ## 5. Fluxo de Autenticação (Frontend → API)
 

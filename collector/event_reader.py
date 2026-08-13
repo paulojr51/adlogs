@@ -53,10 +53,78 @@ class EventReader:
         self._file_handle = None
         self._process_handle = None
 
-    def read_login_events(self, last_record_id: int | None = None) -> list[dict[str, Any]]:
+    # ─── Marca d'água de leitura ──────────────────────────────────────────────
+
+    def _record_timestamp(self, record: Any) -> datetime | None:
+        """Timestamp do registro em UTC, ou None se indisponível."""
+        raw = getattr(record, 'TimeGenerated', None)
+        if raw is None or not hasattr(raw, 'timestamp'):
+            return None
+        try:
+            return datetime.fromtimestamp(raw.timestamp(), tz=timezone.utc)
+        except (OSError, ValueError, OverflowError):
+            return None
+
+    def _reached_watermark(
+        self,
+        record: Any,
+        last_record_id: int | None,
+        last_timestamp: datetime | None,
+    ) -> bool:
         """
-        Lê eventos de login/logoff desde o último record_id processado.
-        Se last_record_id for None, lê os últimos 1000 eventos.
+        True quando a leitura retroativa (do mais novo ao mais antigo) alcançou
+        o ponto já processado.
+
+        O timestamp tem prioridade sobre o RecordNumber: o RecordNumber reinicia
+        em 1 quando o Event Log é limpo ou arquivado por tamanho
+        (AutoBackupLogFiles), e nesse caso todo evento novo pareceria "antigo",
+        travando a coleta indefinidamente.
+
+        A comparação usa `<` e não `<=`: os eventos do exato instante da marca
+        d'água são reprocessados de propósito. A API deduplica por
+        (servidor, record_id, timestamp), então repetir é inofensivo — enquanto
+        pular perderia eventos gravados no mesmo segundo da última leitura.
+        """
+        if last_timestamp is not None:
+            ts = self._record_timestamp(record)
+            if ts is not None:
+                return ts < last_timestamp
+        if last_record_id is not None:
+            return record.RecordNumber <= last_record_id
+        return False
+
+    def _warn_if_record_number_reset(
+        self,
+        record: Any,
+        last_record_id: int | None,
+        channel: str,
+    ) -> None:
+        """Registra aviso quando o RecordNumber recua — sinal de log limpo/arquivado.
+
+        Precisa ser visível: foi justamente o silêncio desse evento que manteve
+        um coletor "ativo" no dashboard por semanas sem coletar nada.
+        """
+        if last_record_id is None:
+            return
+        numero = getattr(record, 'RecordNumber', None)
+        if not isinstance(numero, int) or numero >= last_record_id:
+            return
+        logger.warning(
+            'RecordNumber do log %s recuou (%d < %d): o log foi limpo ou arquivado '
+            'por tamanho. Seguindo pela marca d\'agua de tempo.',
+            channel, numero, last_record_id,
+        )
+
+    # ─── Leitura ──────────────────────────────────────────────────────────────
+
+    def read_login_events(
+        self,
+        last_record_id: int | None = None,
+        last_timestamp: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Lê eventos de login/logoff desde a última marca d'água processada.
+        Sem marca d'água, lê os últimos 1000 eventos.
         """
         events = []
         try:
@@ -65,6 +133,7 @@ class EventReader:
 
             records_processed = 0
             max_records = 1000
+            reset_checked = False
 
             while records_processed < max_records:
                 batch = win32evtlog.ReadEventLog(handle, flags, 0)
@@ -75,8 +144,11 @@ class EventReader:
                     if (record.EventID & 0xFFFF) not in LOGIN_EVENT_IDS:
                         continue
 
-                    record_number = record.RecordNumber
-                    if last_record_id is not None and record_number <= last_record_id:
+                    if not reset_checked:
+                        self._warn_if_record_number_reset(record, last_record_id, 'Security')
+                        reset_checked = True
+
+                    if self._reached_watermark(record, last_record_id, last_timestamp):
                         win32evtlog.CloseEventLog(handle)
                         return events
 
@@ -96,6 +168,7 @@ class EventReader:
         self,
         monitored_folders: list[str],
         last_record_id: int | None = None,
+        last_timestamp: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """
         Lê eventos de arquivo para as pastas monitoradas.
@@ -111,6 +184,7 @@ class EventReader:
 
             records_processed = 0
             max_records = 5000
+            reset_checked = False
 
             while records_processed < max_records:
                 batch = win32evtlog.ReadEventLog(handle, flags, 0)
@@ -121,8 +195,11 @@ class EventReader:
                     if (record.EventID & 0xFFFF) not in FILE_EVENT_IDS:
                         continue
 
-                    record_number = record.RecordNumber
-                    if last_record_id is not None and record_number <= last_record_id:
+                    if not reset_checked:
+                        self._warn_if_record_number_reset(record, last_record_id, 'Security')
+                        reset_checked = True
+
+                    if self._reached_watermark(record, last_record_id, last_timestamp):
                         win32evtlog.CloseEventLog(handle)
                         return events
 
@@ -321,9 +398,13 @@ class EventReader:
             return None
 
 
-    def read_process_events(self, last_record_id: int | None = None) -> list[dict[str, Any]]:
+    def read_process_events(
+        self,
+        last_record_id: int | None = None,
+        last_timestamp: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         """
-        Lê eventos de criação de processo (4688) desde o último record_id.
+        Lê eventos de criação de processo (4688) desde a última marca d'água.
         Requer que "Audit Process Creation" esteja habilitado no Windows.
         """
         events = []
@@ -333,6 +414,7 @@ class EventReader:
 
             records_processed = 0
             max_records = 5000
+            reset_checked = False
 
             while records_processed < max_records:
                 batch = win32evtlog.ReadEventLog(handle, flags, 0)
@@ -343,8 +425,11 @@ class EventReader:
                     if (record.EventID & 0xFFFF) not in PROCESS_EVENT_IDS:
                         continue
 
-                    record_number = record.RecordNumber
-                    if last_record_id is not None and record_number <= last_record_id:
+                    if not reset_checked:
+                        self._warn_if_record_number_reset(record, last_record_id, 'Security')
+                        reset_checked = True
+
+                    if self._reached_watermark(record, last_record_id, last_timestamp):
                         win32evtlog.CloseEventLog(handle)
                         return events
 
@@ -424,13 +509,18 @@ class EventReader:
             return None
 
 
-    def read_account_events(self, last_record_id: int | None = None) -> list[dict[str, Any]]:
+    def read_account_events(
+        self,
+        last_record_id: int | None = None,
+        last_timestamp: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         """Lê eventos de gestão de contas (4720-4733) do Security Log."""
         events = []
         try:
             handle = win32evtlog.OpenEventLog(None, 'Security')
             flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
             records_processed = 0
+            reset_checked = False
 
             while records_processed < 2000:
                 batch = win32evtlog.ReadEventLog(handle, flags, 0)
@@ -439,8 +529,10 @@ class EventReader:
                 for record in batch:
                     if (record.EventID & 0xFFFF) not in ACCOUNT_EVENT_IDS:
                         continue
-                    record_number = record.RecordNumber
-                    if last_record_id is not None and record_number <= last_record_id:
+                    if not reset_checked:
+                        self._warn_if_record_number_reset(record, last_record_id, 'Security')
+                        reset_checked = True
+                    if self._reached_watermark(record, last_record_id, last_timestamp):
                         win32evtlog.CloseEventLog(handle)
                         return events
                     parsed = self._parse_account_event(record)
@@ -515,13 +607,18 @@ class EventReader:
             logger.debug('Error parsing account event %s: %s', getattr(record, 'RecordNumber', '?'), exc)
             return None
 
-    def read_sql_events(self, last_record_id: int | None = None) -> list[dict[str, Any]]:
+    def read_sql_events(
+        self,
+        last_record_id: int | None = None,
+        last_timestamp: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         """Lê eventos SQL Server do Windows Application Log."""
         events = []
         try:
             handle = win32evtlog.OpenEventLog(None, 'Application')
             flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
             records_processed = 0
+            reset_checked = False
 
             while records_processed < 2000:
                 batch = win32evtlog.ReadEventLog(handle, flags, 0)
@@ -533,8 +630,10 @@ class EventReader:
                         continue
                     if (record.EventID & 0xFFFF) not in SQL_EVENT_IDS:
                         continue
-                    record_number = record.RecordNumber
-                    if last_record_id is not None and record_number <= last_record_id:
+                    if not reset_checked:
+                        self._warn_if_record_number_reset(record, last_record_id, 'Application')
+                        reset_checked = True
+                    if self._reached_watermark(record, last_record_id, last_timestamp):
                         win32evtlog.CloseEventLog(handle)
                         return events
                     parsed = self._parse_sql_event(record)

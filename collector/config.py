@@ -17,7 +17,9 @@ SERVER_API_KEY: str = os.environ.get('SERVER_API_KEY', '')
 POLL_INTERVAL: int = int(os.environ.get('POLL_INTERVAL', '30'))
 
 # Versão
-COLLECTOR_VERSION: str = os.environ.get('COLLECTOR_VERSION', '2.0.0')
+# 2.1.0 — marca d'água persistida e à prova de reset do RecordNumber,
+#         checkpoint só avança com envio confirmado, lastEventAt no heartbeat.
+COLLECTOR_VERSION: str = os.environ.get('COLLECTOR_VERSION', '2.1.0')
 
 # Serviço Windows
 SERVICE_NAME: str = os.environ.get('SERVICE_NAME', 'ADLogsCollector')

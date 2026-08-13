@@ -31,13 +31,42 @@ import {
 interface CollectorInfo {
   id: string;
   serverId: string;
+  /** Processo vivo (heartbeat recente). Não significa que está coletando. */
   isRunning: boolean;
+  /** Entregando eventos. `null` = desconhecido (offline ou coletor antigo). */
+  isCollecting: boolean | null;
   lastSeenAt: string;
+  lastEventAt?: string | null;
   version?: string;
   hostname?: string;
   eventsToday: number;
   server: { id: string; name: string; hostname?: string };
 }
+
+type EstadoColetor = 'offline' | 'sem-coletar' | 'ok';
+
+/**
+ * Um coletor com heartbeat recente pode não estar coletando nada: o heartbeat
+ * é enviado a cada ciclo, independentemente do resultado da leitura do Event
+ * Log. Exibir só "online" escondeu uma coleta parada por semanas.
+ */
+function estadoDoColetor(c: CollectorInfo): EstadoColetor {
+  if (!c.isRunning) return 'offline';
+  if (c.isCollecting === false) return 'sem-coletar';
+  return 'ok';
+}
+
+const ESTILO_POR_ESTADO: Record<EstadoColetor, string> = {
+  ok: 'bg-emerald-950/30 border-emerald-800/50 text-emerald-400',
+  'sem-coletar': 'bg-amber-950/30 border-amber-800/50 text-amber-400',
+  offline: 'bg-red-950/30 border-red-800/50 text-red-400',
+};
+
+const TEXTO_POR_ESTADO: Record<EstadoColetor, string> = {
+  ok: 'Coletor online',
+  'sem-coletar': 'Coletor online, mas sem receber eventos',
+  offline: 'Coletor offline',
+};
 
 interface RecentAlert {
   id: string;
@@ -169,30 +198,37 @@ export default function DashboardPage() {
         {/* Status dos Coletores */}
         {hasCollectors ? (
           <div className="space-y-2">
-            {summary!.collectors.map((c) => (
-              <div
-                key={c.id}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
-                  c.isRunning
-                    ? 'bg-emerald-950/30 border-emerald-800/50 text-emerald-400'
-                    : 'bg-red-950/30 border-red-800/50 text-red-400'
-                }`}
-              >
-                <Activity className="h-4 w-4 flex-shrink-0" />
-                <span className="text-sm font-medium flex-1">
-                  <span className="font-semibold">{c.server.name}</span>
-                  {' — '}
-                  {c.isRunning ? 'Coletor online' : 'Coletor offline'}
-                  {c.hostname && ` (${c.hostname})`}
-                </span>
-                <span className="text-xs opacity-60">
-                  {c.eventsToday.toLocaleString('pt-BR')} eventos hoje
-                </span>
-                <span className="text-xs opacity-60">
-                  Última atividade: {formatDate(c.lastSeenAt)}
-                </span>
-              </div>
-            ))}
+            {summary!.collectors.map((c) => {
+              const estado = estadoDoColetor(c);
+              return (
+                <div
+                  key={c.id}
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 rounded-lg border ${ESTILO_POR_ESTADO[estado]}`}
+                >
+                  {estado === 'sem-coletar' ? (
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  ) : (
+                    <Activity className="h-4 w-4 flex-shrink-0" />
+                  )}
+                  <span className="text-sm font-medium flex-1 min-w-0">
+                    <span className="font-semibold">{c.server.name}</span>
+                    {' — '}
+                    {TEXTO_POR_ESTADO[estado]}
+                    {c.hostname && ` (${c.hostname})`}
+                  </span>
+                  <span className="text-xs opacity-60">
+                    {c.eventsToday.toLocaleString('pt-BR')} eventos hoje
+                  </span>
+                  <span className="text-xs opacity-60">
+                    Último evento:{' '}
+                    {c.lastEventAt ? formatDate(c.lastEventAt) : 'não informado'}
+                  </span>
+                  <span className="text-xs opacity-60">
+                    Heartbeat: {formatDate(c.lastSeenAt)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-slate-900 border-slate-800 text-slate-500">

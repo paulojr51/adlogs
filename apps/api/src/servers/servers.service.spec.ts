@@ -25,10 +25,27 @@ describe('ServersService', () => {
   };
   let txServer: Record<string, jest.Mock>;
   let txServerConfig: Record<string, jest.Mock>;
+  let tx: Record<string, Record<string, jest.Mock>>;
 
   beforeEach(async () => {
-    txServer = { create: jest.fn() };
-    txServerConfig = { create: jest.fn() };
+    txServer = { create: jest.fn(), delete: jest.fn() };
+    txServerConfig = { create: jest.fn(), deleteMany: jest.fn() };
+
+    // remove() apaga em cascata; o tx precisa expor todas as tabelas envolvidas.
+    const comDeleteMany = () => ({ deleteMany: jest.fn() });
+    tx = {
+      server: txServer,
+      serverConfig: txServerConfig,
+      alert: comDeleteMany(),
+      alertRule: comDeleteMany(),
+      collectorStatus: comDeleteMany(),
+      monitoredFolder: comDeleteMany(),
+      loginEvent: comDeleteMany(),
+      fileEvent: comDeleteMany(),
+      processEvent: comDeleteMany(),
+      accountEvent: comDeleteMany(),
+      sqlEvent: comDeleteMany(),
+    };
 
     const serverMock = {
       findMany: jest.fn(),
@@ -44,8 +61,7 @@ describe('ServersService', () => {
       server: serverMock,
       serverConfig: serverConfigMock,
       $transaction: jest.fn().mockImplementation(
-        async (fn: (tx: { server: typeof txServer; serverConfig: typeof txServerConfig }) => Promise<unknown>) =>
-          fn({ server: txServer, serverConfig: txServerConfig }),
+        async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
       ),
     };
 
@@ -135,15 +151,27 @@ describe('ServersService', () => {
   });
 
   describe('remove', () => {
-    it('deve desativar servidor (soft delete)', async () => {
+    it('deve excluir o servidor permanentemente', async () => {
       prisma.server.findUnique.mockResolvedValue(mockServer);
-      prisma.server.update.mockResolvedValue({ ...mockServer, active: false });
+
+      const result = await service.remove('srv_1');
+
+      expect(tx.server.delete).toHaveBeenCalledWith({ where: { id: 'srv_1' } });
+      expect(result.message).toContain('permanentemente');
+    });
+
+    // ATENÇÃO: comportamento atual documentado, não endossado.
+    // remove() apaga os eventos de auditoria do servidor, o que conflita com a
+    // regra de imutabilidade de login_events/file_events (CLAUDE.md, regra 15).
+    // Este teste registra o que o código faz hoje para que a mudança de
+    // comportamento seja uma decisão consciente, não um efeito colateral.
+    it('hoje apaga tambem os eventos de auditoria do servidor', async () => {
+      prisma.server.findUnique.mockResolvedValue(mockServer);
 
       await service.remove('srv_1');
-      expect(prisma.server.update).toHaveBeenCalledWith({
-        where: { id: 'srv_1' },
-        data: { active: false },
-      });
+
+      expect(tx.loginEvent.deleteMany).toHaveBeenCalledWith({ where: { serverId: 'srv_1' } });
+      expect(tx.fileEvent.deleteMany).toHaveBeenCalledWith({ where: { serverId: 'srv_1' } });
     });
   });
 });
