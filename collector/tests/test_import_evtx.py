@@ -88,6 +88,53 @@ class TestSubmissaoViaApi:
         enviado.assert_not_called()
 
 
+class TestFiltroDeLeitura:
+    """Auditar leitura gera volume desproporcional: no cliente Belvedere,
+    70% dos eventos de arquivo sao READ. Permitir descarta-los na importacao
+    corta o tempo de recuperacao pela mesma proporcao.
+    """
+
+    def test_deve_descartar_eventos_de_leitura(self):
+        mod = _load_module()
+        eventos = [
+            {'action': 'READ', 'file_path': 'a.txt'},
+            {'action': 'WRITE', 'file_path': 'b.txt'},
+            {'action': 'DELETE', 'file_path': 'c.txt'},
+            {'action': 'READ', 'file_path': 'd.txt'},
+        ]
+
+        resultado = mod.filtrar_acoes(eventos, sem_leitura=True)
+
+        assert len(resultado) == 2
+        assert {e['action'] for e in resultado} == {'WRITE', 'DELETE'}
+
+    def test_deve_manter_tudo_quando_filtro_desligado(self):
+        mod = _load_module()
+        eventos = [
+            {'action': 'READ', 'file_path': 'a.txt'},
+            {'action': 'WRITE', 'file_path': 'b.txt'},
+        ]
+
+        assert mod.filtrar_acoes(eventos, sem_leitura=False) == eventos
+
+    def test_deve_preservar_permission_change(self):
+        """PERMISSION_CHANGE nao e' leitura e nao pode ser descartado."""
+        mod = _load_module()
+        eventos = [
+            {'action': 'PERMISSION_CHANGE', 'file_path': 'a.txt'},
+            {'action': 'READ', 'file_path': 'b.txt'},
+        ]
+
+        resultado = mod.filtrar_acoes(eventos, sem_leitura=True)
+
+        assert len(resultado) == 1
+        assert resultado[0]['action'] == 'PERMISSION_CHANGE'
+
+    def test_deve_tolerar_lista_vazia(self):
+        mod = _load_module()
+        assert mod.filtrar_acoes([], sem_leitura=True) == []
+
+
 class TestValidacaoDeConfiguracao:
     def test_deve_exigir_server_api_key(self):
         """Sem chave, a API nao sabe a qual servidor os eventos pertencem."""

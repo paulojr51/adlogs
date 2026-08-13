@@ -336,6 +336,20 @@ def find_evtx_files(path: str) -> list[str]:
 
 # ─── Importacao em lotes ─────────────────────────────────────────────────────
 
+def filtrar_acoes(events: list[dict], sem_leitura: bool) -> list[dict]:
+    """Remove eventos de leitura quando pedido.
+
+    Auditar leitura de arquivo gera volume desproporcional: cada abertura vira
+    um 4663. Em servidores com SACL de leitura ligada, READ costuma responder
+    pela maior parte dos eventos, e descartá-los encurta a recuperação na mesma
+    proporção — preservando o que interessa para auditoria (escrita, exclusão e
+    mudança de permissão).
+    """
+    if not sem_leitura:
+        return events
+    return [e for e in events if e.get('action') != 'READ']
+
+
 def import_in_batches(events: list[dict], submit_fn, label: str, simulate: bool) -> int:
     """Envia eventos em lotes e retorna o total confirmado pela API.
 
@@ -401,6 +415,12 @@ def main():
         action='store_true',
         help='Modo simulacao: conta eventos mas nao insere no banco',
     )
+    parser.add_argument(
+        '--sem-leitura',
+        action='store_true',
+        help='Ignora eventos de leitura (READ), importando apenas escrita, '
+             'exclusao e mudanca de permissao',
+    )
     args = parser.parse_args()
 
     since: datetime | None = None
@@ -424,6 +444,8 @@ def main():
     print(f'  Destino              : {API_URL}')
     if since:
         print(f'  Importar desde       : {since.strftime("%d/%m/%Y")}')
+    if args.sem_leitura:
+        print('  SEM LEITURA          : eventos READ serao ignorados')
     if args.simular:
         print('  MODO SIMULACAO       : nenhum dado sera inserido')
     print()
@@ -438,6 +460,12 @@ def main():
         print(f'[{idx}/{len(files)}] {os.path.basename(filepath)} ({size_mb:.1f} MB)')
 
         login_events, file_events = read_evtx_file(filepath, since=since)
+
+        lidos_arquivo = len(file_events)
+        file_events = filtrar_acoes(file_events, args.sem_leitura)
+        descartados = lidos_arquivo - len(file_events)
+        if descartados:
+            print(f'  Leitura ignorada: {descartados} evento(s) READ descartado(s)')
 
         total_login += len(login_events)
         total_file += len(file_events)

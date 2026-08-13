@@ -28,8 +28,16 @@
 .PARAMETER Simular
     Conta os eventos sem gravar nada. Util para dimensionar antes de comecar.
 
+.PARAMETER SemLeitura
+    Ignora eventos de leitura (READ), importando apenas escrita, exclusao e
+    mudanca de permissao. Em servidores com SACL de leitura ligada, READ
+    costuma responder pela maior parte do volume.
+
 .EXAMPLE
     .\importar-arquivados.ps1 -Pasta G:\agosto -Simular
+
+.EXAMPLE
+    .\importar-arquivados.ps1 -Pasta G:\agosto -SemLeitura
 
 .EXAMPLE
     Start-Process powershell -ArgumentList '-NoProfile -File C:\adlogs\collector\importar-arquivados.ps1 -Pasta G:\agosto' -WindowStyle Hidden
@@ -44,7 +52,9 @@ param(
 
     [string]$Desde,
 
-    [switch]$Simular
+    [switch]$Simular,
+
+    [switch]$SemLeitura
 )
 
 $ErrorActionPreference = 'Stop'
@@ -92,8 +102,9 @@ $totalGB = [math]::Round((($pendentes | Measure-Object -Property Length -Sum).Su
 Write-Registro "=== Importacao iniciada ==="
 Write-Registro "Pasta    : $Pasta"
 Write-Registro "Arquivos : $($arquivos.Count) no total, $($pendentes.Count) pendentes ($totalGB GB)"
-if ($Desde)   { Write-Registro "Desde    : $Desde" }
-if ($Simular) { Write-Registro "MODO SIMULACAO - nada sera gravado" }
+if ($Desde)      { Write-Registro "Desde    : $Desde" }
+if ($SemLeitura) { Write-Registro "SEM LEITURA - eventos READ serao ignorados" }
+if ($Simular)    { Write-Registro "MODO SIMULACAO - nada sera gravado" }
 
 $indice = 0
 $falhou = $false
@@ -104,8 +115,9 @@ foreach ($arquivo in $pendentes) {
     Write-Registro "[$indice/$($pendentes.Count)] Iniciando $($arquivo.Name)"
 
     $argumentos = @($Importador, $arquivo.FullName)
-    if ($Desde)   { $argumentos += @('--desde', $Desde) }
-    if ($Simular) { $argumentos += '--simular' }
+    if ($Desde)      { $argumentos += @('--desde', $Desde) }
+    if ($SemLeitura) { $argumentos += '--sem-leitura' }
+    if ($Simular)    { $argumentos += '--simular' }
 
     & $Python @argumentos 2>&1 | ForEach-Object {
         Add-Content -Path $Log -Value $_ -Encoding utf8

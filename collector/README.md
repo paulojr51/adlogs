@@ -142,6 +142,40 @@ Get-Content C:\adlogs\collector\import-agosto.log -Wait -Tail 20
 Ele para na primeira falha em vez de seguir adiante: numa recuperação de
 histórico, um arquivo pulado em silêncio é pior que uma parada visível.
 
+Para pular eventos de leitura na importação, acrescente `-SemLeitura`
+(equivale a `--sem-leitura` no `import_evtx.py`).
+
+## Auditoria de leitura e volume do log
+
+Auditar **leitura** de arquivo faz o Windows gerar um 4663 a cada abertura.
+Em pastas de trabalho isso produz volume desproporcional — e o efeito colateral
+é grave: o Security log enche, o Windows arquiva, o `RecordNumber` **reinicia**,
+e a coleta trava (foi exatamente o que aconteceu no cliente Belvedere, com 70%
+dos eventos sendo `READ` e 1,28 GB de log arquivado várias vezes ao dia).
+
+`configurar-sacl.ps1` troca a auditoria da pasta por uma que cobre só o que
+interessa: escrita, exclusão, mudança de permissão e tomada de posse.
+
+```powershell
+# 1. Ver o que existe hoje e o que mudaria — não altera nada
+.\configurar-sacl.ps1 -Pasta E:\dados\Dropbox -Simular
+
+# 2. Aplicar (salva a SACL atual em .sddl antes de mexer)
+.\configurar-sacl.ps1 -Pasta E:\dados\Dropbox
+
+# 3. Desfazer, se necessário
+.\configurar-sacl.ps1 -Pasta E:\dados\Dropbox -Restaurar .\sacl-backup-Dropbox-<carimbo>.sddl
+```
+
+**O que se perde:** deixa de ser possível responder "quem *abriu* este arquivo".
+Continua sendo possível responder quem criou, alterou, excluiu ou mudou
+permissão. Para a maioria dos casos de auditoria é o que importa — mas é uma
+decisão de negócio, não técnica.
+
+`audit.ps1` cuida das categorias de auditoria do Windows (`auditpol`);
+`configurar-sacl.ps1` cuida das SACLs das pastas. São camadas diferentes e
+ambas precisam estar corretas para os eventos de arquivo aparecerem.
+
 ## Logs
 
 Os logs ficam em: `C:\ProgramData\ADLogs\collector.log`
