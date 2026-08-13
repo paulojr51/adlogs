@@ -117,6 +117,31 @@ Reexecutar é seguro: o que já entrou é deduplicado por
 após 3 tentativas, a importação **para e avisa** em vez de seguir em frente —
 numa recuperação, um lote perdido não pode se confundir com "eram duplicados".
 
+### Pastas grandes: `importar-arquivados.ps1`
+
+Servidores com auditoria de leitura ligada arquivam o log várias vezes por dia,
+e a recuperação passa a envolver centenas de GB e muitas horas. Nesse caso, use
+o script que processa arquivo a arquivo e **retoma de onde parou**:
+
+```powershell
+# 1. Dimensionar antes de comprometer horas
+.\importar-arquivados.ps1 -Pasta G:\agosto -Simular
+
+# 2. Importar em segundo plano (sobrevive ao fechamento da janela)
+Start-Process powershell -ArgumentList `
+  '-NoProfile -File C:\adlogs\collector\importar-arquivados.ps1 -Pasta G:\agosto' `
+  -WindowStyle Hidden
+
+# 3. Acompanhar
+Get-Content C:\adlogs\collector\import-agosto.log -Wait -Tail 20
+
+# 4. Se cair, o mesmo comando retoma — os concluídos ficam registrados em
+#    import-agosto-concluidos.txt
+```
+
+Ele para na primeira falha em vez de seguir adiante: numa recuperação de
+histórico, um arquivo pulado em silêncio é pior que uma parada visível.
+
 ## Logs
 
 Os logs ficam em: `C:\ProgramData\ADLogs\collector.log`
