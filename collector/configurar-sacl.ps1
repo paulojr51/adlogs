@@ -24,6 +24,13 @@
 .PARAMETER Pasta
     Pasta monitorada (ex: E:\dados\Dropbox).
 
+.PARAMETER Identidade
+    Quem sera auditado (ex: 'ADV\Usuarios do dominio', 'Todos').
+    Por padrao o script PRESERVA a identidade que ja esta configurada na pasta.
+    Ampliar o escopo (por exemplo de "usuarios do dominio" para "todos") tende a
+    AUMENTAR o volume do log, porque passa a auditar contas de servico, backup e
+    antivirus - que o coletor descarta no parse. Log a mais, dado util nenhum.
+
 .PARAMETER Simular
     Mostra as regras atuais e as que seriam aplicadas, sem alterar nada.
 
@@ -44,6 +51,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Pasta,
+
+    [string]$Identidade,
 
     [switch]$Simular,
 
@@ -115,17 +124,52 @@ $Direitos =
     [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
     [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
-# SID bem conhecido de "Todos" (S-1-1-0): independe do idioma do Windows.
-$Todos = New-Object System.Security.Principal.SecurityIdentifier('S-1-1-0')
+# A identidade auditada e' uma decisao do cliente, nao um detalhe tecnico.
+# Preserva-se a que ja existe: ampliar o escopo (de "usuarios do dominio" para
+# "todos", por exemplo) faz o log crescer com contas de servico e backup, que o
+# coletor descarta no parse - volume a mais sem dado util.
+$aclLeitura = Get-Acl -Path $Pasta -Audit
+$regrasAtuais = $aclLeitura.GetAuditRules($true, $false, [System.Security.Principal.NTAccount])
+$identidadesAtuais = @($regrasAtuais | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+
+if ($Identidade) {
+    $alvo = $Identidade
+    $origemAlvo = 'informada por parametro'
+} elseif ($identidadesAtuais.Count -eq 1) {
+    $alvo = $identidadesAtuais[0]
+    $origemAlvo = 'preservada da configuracao atual'
+} elseif ($identidadesAtuais.Count -eq 0) {
+    throw ("A pasta nao tem auditoria configurada, entao nao ha identidade a preservar. " +
+           "Informe explicitamente, ex: -Identidade 'Todos'")
+} else {
+    throw ("A pasta tem auditoria para mais de uma identidade: " +
+           ($identidadesAtuais -join ', ') +
+           ". Escolher qual manter e' decisao sua - informe com -Identidade.")
+}
+
+try {
+    $conta = New-Object System.Security.Principal.NTAccount($alvo)
+    $null = $conta.Translate([System.Security.Principal.SecurityIdentifier])
+} catch {
+    throw "Identidade nao reconhecida pelo Windows: '$alvo'"
+}
 
 Write-Titulo "Auditoria que sera aplicada"
-Write-Host "    Identidade : Todos (S-1-1-0)" -ForegroundColor White
+Write-Host "    Identidade : $alvo  ($origemAlvo)" -ForegroundColor White
 Write-Host "    Eventos    : Sucesso e Falha" -ForegroundColor White
 Write-Host "    Direitos   : $Direitos" -ForegroundColor White
 Write-Host "    Heranca    : subpastas e arquivos" -ForegroundColor White
 Write-Host ""
 Write-Host "    FORA (nao serao mais auditados): leitura de dados," -ForegroundColor DarkYellow
 Write-Host "    leitura de atributos, execucao e leitura de permissoes." -ForegroundColor DarkYellow
+
+if ($Identidade -and $identidadesAtuais.Count -eq 1 -and $Identidade -ne $identidadesAtuais[0]) {
+    Write-Host ""
+    Write-Host "    ATENCAO: a identidade auditada vai MUDAR" -ForegroundColor Red
+    Write-Host "      de : $($identidadesAtuais[0])" -ForegroundColor Red
+    Write-Host "      para: $alvo" -ForegroundColor Red
+    Write-Host "    Ampliar o escopo aumenta o volume do log." -ForegroundColor Red
+}
 
 if ($Simular) {
     Write-Host ""
@@ -159,7 +203,7 @@ foreach ($r in $existentes) {
 }
 
 $regra = New-Object System.Security.AccessControl.FileSystemAuditRule(
-    $Todos,
+    (New-Object System.Security.Principal.NTAccount($alvo)),
     $Direitos,
     'ContainerInherit, ObjectInherit',
     'None',
