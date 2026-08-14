@@ -119,10 +119,23 @@ foreach ($arquivo in $pendentes) {
     if ($SemLeitura) { $argumentos += '--sem-leitura' }
     if ($Simular)    { $argumentos += '--simular' }
 
-    & $Python @argumentos 2>&1 | ForEach-Object {
-        Add-Content -Path $Log -Value $_ -Encoding utf8
+    # ATENCAO: com $ErrorActionPreference = 'Stop', o 2>&1 num executavel
+    # nativo transforma cada linha de stderr em erro TERMINANTE, mesmo quando
+    # o programa retorna 0. O import_evtx.py loga via logging.basicConfig, que
+    # escreve em stderr: o script morria na primeira linha de log, em silencio,
+    # antes de registrar o OK - e deixava o python rodando orfao.
+    # Por isso a preferencia e' relaxada apenas em volta da chamada nativa.
+    $anterior = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Python @argumentos 2>&1 | ForEach-Object {
+            Add-Content -Path $Log -Value $_ -Encoding utf8
+        }
+        $codigo = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $anterior
     }
-    $codigo = $LASTEXITCODE
+    if ($null -eq $codigo) { $codigo = 0 }
 
     $duracao = [math]::Round(((Get-Date) - $inicio).TotalMinutes, 1)
 
