@@ -145,6 +145,34 @@ histórico, um arquivo pulado em silêncio é pior que uma parada visível.
 Para pular eventos de leitura na importação, acrescente `-SemLeitura`
 (equivale a `--sem-leitura` no `import_evtx.py`).
 
+## Verificar a detecção de exclusão (`testar-exclusao.py`)
+
+Detectar **quem excluiu** é a função principal do sistema, e a lógica que a
+sustenta é delicada. O Windows não gera 4663 com DELETE para *arquivos* — só
+para pastas —, então a detecção depende do 4656 com a máscara certa, e o parser
+ainda precisa separar uma exclusão real de um Office abrindo o arquivo para
+editar (que também pede DELETE na máscara):
+
+```python
+# event_reader.py — exige DELETE e rejeita se vier bit de escrita junto
+if not (mask_int & 0x10000) or (mask_int & 0x106):
+    return None
+```
+
+Essa lógica foi calibrada contra os eventos que a SACL atual produz. **Qualquer
+mudança de SACL ou de política de auditoria pode quebrá-la em silêncio.**
+
+```powershell
+.\venv\Scripts\python.exe testar-exclusao.py E:\dados\Dropbox
+```
+
+O script cria um arquivo, exclui, e roda o **parser de produção** sobre o evento
+real. Sai com código 0 se detectou, 1 se não. Quando falha, mostra os campos
+brutos do evento — o que distingue "o Windows nem gerou o evento" (problema de
+SACL) de "gerou com máscara inesperada" (problema de parsing).
+
+**Rode antes e depois de mexer em auditoria, e compare.**
+
 ## Auditoria de leitura e volume do log
 
 Auditar **leitura** de arquivo faz o Windows gerar um 4663 a cada abertura.
@@ -156,16 +184,31 @@ dos eventos sendo `READ` e 1,28 GB de log arquivado várias vezes ao dia).
 `configurar-sacl.ps1` troca a auditoria da pasta por uma que cobre só o que
 interessa: escrita, exclusão, mudança de permissão e tomada de posse.
 
+> **Nunca mude a SACL sem verificar a detecção de exclusão antes e depois.**
+> A ordem abaixo não é sugestão — o passo 1 é o que garante que você percebe
+> uma regressão na função principal do sistema.
+
 ```powershell
-# 1. Ver o que existe hoje e o que mudaria — não altera nada
+# 1. LINHA DE BASE — precisa dar OK antes de qualquer mudança
+.\venv\Scripts\python.exe testar-exclusao.py E:\dados\Dropbox
+
+# 2. Ver o que existe hoje e o que mudaria — não altera nada
 .\configurar-sacl.ps1 -Pasta E:\dados\Dropbox -Simular
 
-# 2. Aplicar (salva a SACL atual em .sddl antes de mexer)
+# 3. Aplicar (salva a SACL atual em .sddl antes de mexer)
 .\configurar-sacl.ps1 -Pasta E:\dados\Dropbox
 
-# 3. Desfazer, se necessário
+# 4. VERIFICAR DE NOVO — tem que continuar OK
+.\venv\Scripts\python.exe testar-exclusao.py E:\dados\Dropbox --detalhado
+
+# 5. Se o passo 4 falhar, desfaça imediatamente
 .\configurar-sacl.ps1 -Pasta E:\dados\Dropbox -Restaurar .\sacl-backup-Dropbox-<carimbo>.sddl
 ```
+
+Por padrão o script **preserva a identidade auditada** que já está na pasta.
+Ampliar o escopo (de "usuários do domínio" para "todos", por exemplo) tende a
+*aumentar* o volume do log, porque passa a auditar contas de serviço, backup e
+antivírus — que o coletor descarta no parse. Log a mais, dado útil nenhum.
 
 **O que se perde:** deixa de ser possível responder "quem *abriu* este arquivo".
 Continua sendo possível responder quem criou, alterou, excluiu ou mudou
