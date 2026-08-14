@@ -162,7 +162,10 @@ model LoginEvent {
   @@index([success])
   @@index([sourceIp])
   @@index([windowsEventId])
-  @@index([windowsRecordId])
+  // Composto, na ordem exata do filtro de deduplicação da ingestão
+  // (serverId + windowsRecordId). Um índice só em windowsRecordId não serve:
+  // o planejador cai em seq scan e cada lote leva minutos.
+  @@index([serverId, windowsRecordId])
   @@map("login_events")
 }
 
@@ -194,7 +197,7 @@ model FileEvent {
   @@index([action])
   @@index([monitoredFolder])
   @@index([windowsEventId])
-  @@index([windowsRecordId])
+  @@index([serverId, windowsRecordId])
   @@map("file_events")
 }
 
@@ -224,6 +227,7 @@ model ProcessEvent {
   @@index([username])
   @@index([timestamp])
   @@index([processName])
+  @@index([serverId, windowsRecordId])
   @@map("process_events")
 }
 
@@ -252,6 +256,7 @@ model AccountEvent {
   @@index([targetUsername])
   @@index([timestamp])
   @@index([eventType])
+  @@index([serverId, windowsRecordId])
   @@map("account_events")
 }
 
@@ -279,6 +284,7 @@ model SqlEvent {
   @@index([serverId])
   @@index([timestamp])
   @@index([eventType])
+  @@index([serverId, windowsRecordId])
   @@map("sql_events")
 }
 
